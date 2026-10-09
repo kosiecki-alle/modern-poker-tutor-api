@@ -1,0 +1,5445 @@
+{
+  "openapi": "3.1.1",
+  "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
+  "x-openapi-generation": "Use default FastAPI OpenAPI generation and caching from typed route declarations, request/response models, header/query constraints, and error models. No app.openapi override or copying this document into generated output. This file remains the normative domain contract; generated schema names, layout, metadata, examples, extensions, and OpenAPI patch version may differ. Compare semantic behavior and operation coverage, not identical JSON. The generated document has no fixed servers section; Swagger uses the serving origin, while deployment host/port is configured independently.",
+  "info": {
+    "title": "Poker Tutor Full API",
+    "version": "1.0.0",
+    "description": "Merged contract for local, single-user, four-player Texas Hold’em practice. It retains session, hand, action, continuation, replay, statistics, and deletion workflows, and specifies the analysis behind feedback. Cards are compact strings. All chip values are fictional. No authentication is required in this local/trusted-LAN scope.\n\nGame: user seat 0 and three opponents. A hand begins on the flop after every player pays the configured equal opening contribution. The user checks, bets exactly 10, or folds. All three opponents call a legal bet, adding 40 to the pot, and otherwise check. No rake, ICM, side pots, variable bets, raises, or partial all-ins. Bet is unavailable if any stack is below 10. Check is free. New hand requires every stack to cover the opening contribution.\n\nFour-player equity is expected pot share: P(user alone wins) + P(user ties for best with exactly one opponent)/2 + P(user ties with exactly two)/3 + P(all four tie)/4. Outright-win probability excludes ties and serves only as supplementary feedback. Each trial ranks the best five-card hand from each player’s two cards plus the completed five-card board.\n\nDecision EV uses a disclosed check_down reference policy after the current action. For the current unawarded pot P: checkEV=e*P, betEV=e*(P+40)-10, foldEV=0. Previously committed chips are sunk. betEV-checkEV=40*e-10, so the matched-bet break-even share is 25%. Grading evaluates these legal actions, never a single realized result. Later actual decisions can change the eventual chip outcome.\n\nBefore exposing a decision, the server freezes its underlying analysis for that hand/street. Monte Carlo uses exactly 10000 independent uniform trials, with repetitions across trials permitted. Trial values for equity are 0, 1/4, 1/3, 1/2, or 1. The conservative marginal 95% Hoeffding radius is min(1,sqrt(ln(40)/(2*N))). Exact enumeration or proof has N=0 and error=0. All probabilities and EVs derive from the same samples.\n\nThe closed equity interval is [max(0,e-m),min(1,e+m)]. An action is acceptable if it is optimal for at least one equity inside that interval, with the same equity used across all action EVs. With a legal bet, check is acceptable when lower<=0.25, bet when upper>=0.25, and fold when lower=0. Without a legal bet, check is acceptable and fold is acceptable only when lower=0. The positive active pot makes a free check dominate fold whenever equity is positive. grade is bad for an unacceptable action, good for a sole acceptable action, and reasonable otherwise.\n\nRanges: each opponent has an explicit unchanged list of canonical hand classes, normally all 169. Expand to concrete combinations and remove visible blockers. Every collision-free JOINT assignment to the three labelled opponents has equal probability. Sampling three independent range combinations and rejecting the entire tuple on any overlap is valid. Choosing uniformly from a shrinking range one opponent at a time is generally not uniform over joint assignments unless weighted by the number of compatible completions. Then sample the remaining board uniformly without replacement. At least one legal joint assignment must exist.\n\nThe actual hidden deal is fixed when the hand is created. Analysis resamples hypothetical legal opponents and completions from visible information and disclosed ranges; it never reads the actual hidden opponents or future cards. Card/range selection is independent of user history, activity, grades, and chip results. An unbiased bounded-integer generator with a correct uniform shuffle or equivalent sampling method is required. Future reveals condition the same fixed range assumptions on newly visible blockers.\n\nShowdown splits the actual pot equally among best hands and permits exact fractional fictional chips. Folding reveals a separately labelled hypothetical four-player review, while actual settlement excludes the user and awards the pot among the three opponents. Only actual chip changes affect statistics. Ending a session abandons unfinished hands, refunds all their opening contributions and bets, and reveals no concealed cards. Recorded decision grades remain counted. All balances, pot settlement, stage transitions, and statistics update atomically exactly once.\n\nEvery JSON response has Content-Type application/json. Every error uses APIError. Backend validation enforces descriptive and x-invariants arithmetic, shared-card uniqueness, membership, range feasibility, and cross-resource relationships that JSON Schema cannot express directly. Finite floating-point comparisons allow a tolerance of 1e-9*max(1,absolute amount); the server preserves exact rational payout accounting internally."
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8080",
+      "description": "Lokalny backend dla symulatora iOS."
+    },
+    {
+      "url": "http://{host}:8080",
+      "description": "Backend w tej samej zaufanej sieci LAN co iPhone; host to adres komputera.",
+      "variables": {
+        "host": {
+          "default": "192.168.1.10",
+          "description": "Adres IP komputera z backendem."
+        }
+      }
+    }
+  ],
+  "security": [],
+  "tags": [
+    {
+      "name": "Sessions",
+      "description": "Session lifecycle and statistics."
+    },
+    {
+      "name": "Hands",
+      "description": "Visible hand states and settlement."
+    },
+    {
+      "name": "Decisions",
+      "description": "Saved EV-based analysis and explicit continuation."
+    },
+    {
+      "name": "Replay",
+      "description": "Immutable recorded states."
+    }
+  ],
+  "paths": {
+    "/api/v1/sessions": {
+      "get": {
+        "summary": "List Sessions",
+        "description": "List persisted sessions in creation order, including the sole active session. No analysis is performed. Sessions remain until explicitly deleted.",
+        "operationId": "listSessions",
+        "responses": {
+          "200": {
+            "description": "Saved sessions.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SessionResponse"
+                  },
+                  "minItems": 0
+                },
+                "examples": {
+                  "initial": {
+                    "summary": "One new session",
+                    "value": [
+                      {
+                        "id": "10000000-0000-4000-8000-000000000001",
+                        "status": "active",
+                        "created_at": "2026-10-09T10:00:00Z",
+                        "rules": {
+                          "player_count": 4,
+                          "starting_stack": 1000,
+                          "opening_contribution": 10,
+                          "bet_amount": 10,
+                          "opponent_policy": "check_or_call",
+                          "analysis_policy": "check_down"
+                        },
+                        "hand_ids": [],
+                        "active_hand_id": null,
+                        "statistics": {
+                          "hands": {
+                            "completed": 0,
+                            "folded": 0,
+                            "abandoned": 0
+                          },
+                          "decisions": {
+                            "good": 0,
+                            "bad": 0,
+                            "reasonable": 0
+                          },
+                          "net_chips": 0
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Sessions"
+        ]
+      },
+      "post": {
+        "summary": "Create Session",
+        "description": "Create the sole active session using {} and a required Idempotency-Key UUID header. Persist a successful key atomically with creation. Reusing any successful creation key returns 409/creation_request_replayed without mutation, including after ending, deletion, or restart. Failed requests do not consume keys. Return fixed rules. All four initial balances equal rules.starting_stack and carry over between hands; only a new session resets them. If a session is already active return 409/active_session_exists; use listSessions to resume it.",
+        "operationId": "createSession",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CreationKey"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmptyRequest"
+              },
+              "examples": {
+                "empty": {
+                  "summary": "Empty request",
+                  "value": {}
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created a session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionResponse"
+                },
+                "examples": {
+                  "created": {
+                    "summary": "New session",
+                    "value": {
+                      "id": "10000000-0000-4000-8000-000000000001",
+                      "status": "active",
+                      "created_at": "2026-10-09T10:00:00Z",
+                      "rules": {
+                        "player_count": 4,
+                        "starting_stack": 1000,
+                        "opening_contribution": 10,
+                        "bet_amount": 10,
+                        "opponent_policy": "check_or_call",
+                        "analysis_policy": "check_down"
+                      },
+                      "hand_ids": [],
+                      "active_hand_id": null,
+                      "statistics": {
+                        "hands": {
+                          "completed": 0,
+                          "folded": 0,
+                          "abandoned": 0
+                        },
+                        "decisions": {
+                          "good": 0,
+                          "bad": 0,
+                          "reasonable": 0
+                        },
+                        "net_chips": 0
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "Location": {
+                "description": "Relative URI for getSession or getHand.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                },
+                "examples": {
+                  "example": {
+                    "summary": "Stable error envelope",
+                    "value": {
+                      "code": "invalid_request",
+                      "message": "Request body is not valid JSON."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The current resource state conflicts with this operation; no partial mutation occurs. Reused successful Idempotency-Key returns creation_request_replayed, including after ending, deletion, or restart. An unused key with an active session returns active_session_exists.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                },
+                "examples": {
+                  "example": {
+                    "summary": "Stable error envelope",
+                    "value": {
+                      "code": "active_session_exists",
+                      "message": "An active session already exists. Resume or end it."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Content-Type must be application/json.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                },
+                "examples": {
+                  "example": {
+                    "summary": "Stable error envelope",
+                    "value": {
+                      "code": "unsupported_media_type",
+                      "message": "Send the request as application/json."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "JSON, path, or query validation failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                },
+                "examples": {
+                  "example": {
+                    "summary": "Stable error envelope",
+                    "value": {
+                      "code": "validation_error",
+                      "message": "The request does not satisfy the schema."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Sessions"
+        ]
+      }
+    },
+    "/api/v1/sessions/{session_id}": {
+      "get": {
+        "summary": "Get Session",
+        "description": "Retrieve the saved session, hand IDs, active hand ID, and statistics. Ended sessions remain readable. An unknown or deleted session returns 404/session_not_found.",
+        "operationId": "getSession",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ID"
+            },
+            "description": "Owning session ID."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Saved session and statistics.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionResponse"
+                },
+                "examples": {
+                  "session": {
+                    "summary": "Session without hands",
+                    "value": {
+                      "id": "10000000-0000-4000-8000-000000000001",
+                      "status": "active",
+                      "created_at": "2026-10-09T10:00:00Z",
+                      "rules": {
+                        "player_count": 4,
+                        "starting_stack": 1000,
+                        "opening_contribution": 10,
+                        "bet_amount": 10,
+                        "opponent_policy": "check_or_call",
+                        "analysis_policy": "check_down"
+                      },
+                      "hand_ids": [],
+                      "active_hand_id": null,
+                      "statistics": {
+                        "hands": {
+                          "completed": 0,
+                          "folded": 0,
+                          "abandoned": 0
+                        },
+                        "decisions": {
+                          "good": 0,
+                          "bad": 0,
+                          "reasonable": 0
+                        },
+                        "net_chips": 0
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown resource, or hand does not belong to the specified session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                },
+                "examples": {
+                  "example": {
+                    "summary": "Stable error envelope",
+                    "value": {
+                      "code": "session_not_found",
+                      "message": "The requested session does not exist."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "JSON, path, or query validation failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                },
+                "examples": {
+                  "example": {
+                    "summary": "Stable error envelope",
+                    "value": {
+                      "code": "validation_error",
+                      "message": "The request does not satisfy the schema."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Sessions"
+        ]
+      },
+      "delete": {
+        "summary": "Delete Session",
+        "description": "Delete an ended session and all its hands, analysis, actions, replay snapshots, and outcomes atomically. Preserve minimal successful creation-key tombstones independently of deleted history so delayed retries remain rejected. Active session returns 409/session_active. Missing or already deleted session returns 404/session_not_found. Return 204 without a body.",
+        "operationId": "deleteSession",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ID"
+            },
+            "description": "Owning session ID."
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Session and dependent records deleted. No response body."
+          },
+          "404": {
+            "description": "Unknown resource, or hand does not belong to the specified session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                },
+                "examples": {
+                  "example": {
+                    "summary": "Stable error envelope",
+                    "value": {
+                      "code": "session_not_found",
+                      "message": "The requested session does not exist."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The current resource state conflicts with this operation; no partial mutation occurs.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                },
+                "examples": {
+                  "example": {
+                    "summary": "Stable error envelope",
+                    "value": {
+                      "code": "session_active",
+                      "message": "End the session before deleting it."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "JSON, path, or query validation failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                },
+                "examples": {
+                  "example": {
+                    "summary": "Stable error envelope",
+                    "value": {
+                      "code": "validation_error",
+                      "message": "The request does not satisfy the schema."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Sessions"
+        ]
+      }
+    },
+    "/api/v1/sessions/{session_id}/end": {
+      "post": {
+        "summary": "End Session",
+        "description": "End the active session using {}. Refund each player’s contributions to any unfinished hand, set its pot to zero and status/stage to abandoned, and record an abandon snapshot with no hidden-card reveal. Keep recorded grades, exclude this hand from settled net_chips, and clear active_hand_id. Repeated ending returns 409/session_ended.",
+        "operationId": "endSession",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ID"
+            },
+            "description": "Owning session ID."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmptyRequest"
+              },
+              "examples": {
+                "empty": {
+                  "summary": "Empty request",
+                  "value": {}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Ended session with updated statistics.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                },
+                "examples": {
+                  "example": {
+                    "summary": "Stable error envelope",
+                    "value": {
+                      "code": "invalid_request",
+                      "message": "Request body is not valid JSON."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown resource, or hand does not belong to the specified session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                },
+                "examples": {
+                  "example": {
+                    "summary": "Stable error envelope",
+                    "value": {
+                      "code": "session_not_found",
+                      "message": "The requested session does not exist."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The current resource state conflicts with this operation; no partial mutation occurs.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                },
+                "examples": {
+                  "example": {
+                    "summary": "Stable error envelope",
+                    "value": {
+                      "code": "session_ended",
+                      "message": "This session has already ended."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Content-Type must be application/json.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                },
+                "examples": {
+                  "example": {
+                    "summary": "Stable error envelope",
+                    "value": {
+                      "code": "unsupported_media_type",
+                      "message": "Send the request as application/json."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "JSON, path, or query validation failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                },
+                "examples": {
+                  "example": {
+                    "summary": "Stable error envelope",
+                    "value": {
+                      "code": "validation_error",
+                      "message": "The request does not satisfy the schema."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Sessions"
+        ]
+      }
+    },
+    "/api/v1/sessions/{session_id}/hands": {
+      "post": {
+        "summary": "Create Hand",
+        "description": "Create a hand using {} and a required Idempotency-Key UUID header. Reusing any successful creation key returns 409/creation_request_replayed without a new deal or debit, including after completion, ending, deletion, or restart. Persist the key atomically with creation; failed requests do not consume it. An unknown parent session returns 404/session_not_found. Require active session, no active hand, and enough chips at every seat for opening contribution. Use carried session balances, deduct the contribution and set pot=4*opening_contribution. Select disclosed ranges, deal unique hero/flop cards and a legal uniform joint opponent assignment, fix actual runout, and cache unpublished analysis. Return awaiting_action/flop with null feedback, showdown, and review. No client cards, seeds, ranges, or bet amounts are accepted.",
+        "operationId": "createHand",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CreationKey"
+          },
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ID"
+            },
+            "description": "Owning session ID."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmptyRequest"
+              },
+              "examples": {
+                "empty": {
+                  "summary": "Empty request",
+                  "value": {}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created the visible flop; analysis and concealed cards remain internal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HandResponse"
+                },
+                "examples": {
+                  "flop": {
+                    "summary": "Flop with a made royal flush",
+                    "value": {
+                      "id": "20000000-0000-4000-8000-000000000001",
+                      "session_id": "10000000-0000-4000-8000-000000000001",
+                      "created_at": "2026-10-09T10:01:00Z",
+                      "status": "active",
+                      "street": "flop",
+                      "stage": "awaiting_action",
+                      "user_cards": [
+                        "As",
+                        "Ks"
+                      ],
+                      "community_cards": [
+                        "Qs",
+                        "Js",
+                        "Ts"
+                      ],
+                      "pot": 40,
+                      "stacks": [
+                        990,
+                        990,
+                        990,
+                        990
+                      ],
+                      "available_actions": [
+                        "check",
+                        "bet",
+                        "fold"
+                      ],
+                      "bet_amount": 10,
+                      "opponent_policy": "check_or_call",
+                      "opponent_ranges": [
+                        {
+                          "player_index": 1,
+                          "id": "small_pairs",
+                          "name": "Small pairs",
+                          "description": "This opponent holds one of the listed pairs. All compatible joint assignments have equal probability.",
+                          "hands": [
+                            "22",
+                            "33",
+                            "44",
+                            "55"
+                          ]
+                        },
+                        {
+                          "player_index": 2,
+                          "id": "small_pairs",
+                          "name": "Small pairs",
+                          "description": "This opponent holds one of the listed pairs. All compatible joint assignments have equal probability.",
+                          "hands": [
+                            "22",
+                            "33",
+                            "44",
+                            "55"
+                          ]
+                        },
+                        {
+                          "player_index": 3,
+                          "id": "small_pairs",
+                          "name": "Small pairs",
+                          "description": "This opponent holds one of the listed pairs. All compatible joint assignments have equal probability.",
+                          "hands": [
+                            "22",
+                            "33",
+                            "44",
+                            "55"
+                          ]
+                        }
+                      ],
+                      "feedback": null,
+                      "showdown": null,
+                      "review": null
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "Location": {
+                "description": "Relative URI for getSession or getHand.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                },
+                "examples": {
+                  "example": {
+                    "summary": "Stable error envelope",
+                    "value": {
+                      "code": "invalid_request",
+                      "message": "Request body is not valid JSON."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown resource, or hand does not belong to the specified session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                },
+                "examples": {
+                  "example": {
+                    "summary": "Stable error envelope",
+                    "value": {
+                      "code": "session_not_found",
+                      "message": "The requested session does not exist."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "State conflict with no partial mutation. Reused successful Idempotency-Key returns creation_request_replayed, even after completion, ending, deletion, or restart. An unused key may return active_hand_exists, session_ended, or insufficient_chips as appropriate.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                },
+                "examples": {
+                  "example": {
+                    "summary": "Stable error envelope",
+                    "value": {
+                      "code": "active_hand_exists",
+                      "message": "Finish or abandon the active hand before creating another."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Content-Type must be application/json.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                },
+                "examples": {
+                  "example": {
+                    "summary": "Stable error envelope",
+                    "value": {
+                      "code": "unsupported_media_type",
+                      "message": "Send the request as application/json."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "JSON, path, or query validation failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                },
+                "examples": {
+                  "example": {
+                    "summary": "Stable error envelope",
+                    "value": {
+                      "code": "validation_error",
+                      "message": "The request does not satisfy the schema."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Analysis temporarily unavailable; no cards, balances, state, or statistics have changed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                },
+                "examples": {
+                  "example": {
+                    "summary": "Stable error envelope",
+                    "value": {
+                      "code": "simulation_unavailable",
+                      "message": "Analysis is temporarily unavailable. Retry or retrieve the saved hand."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Hands"
+        ]
+      }
+    },
+    "/api/v1/sessions/{session_id}/hands/{hand_id}": {
+      "get": {
+        "summary": "Get Hand",
+        "description": "Retrieve the latest saved hand state without computing analysis. Nonterminal and abandoned states exclude opponent and future cards. Terminal showdown or fold_review includes only its specified reveal. Wrong session/hand relationship returns 404/hand_not_found.",
+        "operationId": "getHand",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ID"
+            },
+            "description": "Owning session ID."
+          },
+          {
+            "name": "hand_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ID"
+            },
+            "description": "Hand ID belonging to this session."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Saved visible state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HandResponse"
+                },
+                "examples": {
+                  "awaiting": {
+                    "summary": "Awaiting first decision",
+                    "value": {
+                      "id": "20000000-0000-4000-8000-000000000001",
+                      "session_id": "10000000-0000-4000-8000-000000000001",
+                      "created_at": "2026-10-09T10:01:00Z",
+                      "status": "active",
+                      "street": "flop",
+                      "stage": "awaiting_action",
+                      "user_cards": [
+                        "As",
+                        "Ks"
+                      ],
+                      "community_cards": [
+                        "Qs",
+                        "Js",
+                        "Ts"
+                      ],
+                      "pot": 40,
+                      "stacks": [
+                        990,
+                        990,
+                        990,
+                        990
+                      ],
+                      "available_actions": [
+                        "check",
+                        "bet",
+                        "fold"
+                      ],
+                      "bet_amount": 10,
+                      "opponent_policy": "check_or_call",
+                      "opponent_ranges": [
+                        {
+                          "player_index": 1,
+                          "id": "small_pairs",
+                          "name": "Small pairs",
+                          "description": "This opponent holds one of the listed pairs. All compatible joint assignments have equal probability.",
+                          "hands": [
+                            "22",
+                            "33",
+                            "44",
+                            "55"
+                          ]
+                        },
+                        {
+                          "player_index": 2,
+                          "id": "small_pairs",
+                          "name": "Small pairs",
+                          "description": "This opponent holds one of the listed pairs. All compatible joint assignments have equal probability.",
+                          "hands": [
+                            "22",
+                            "33",
+                            "44",
+                            "55"
+                          ]
+                        },
+                        {
+                          "player_index": 3,
+                          "id": "small_pairs",
+                          "name": "Small pairs",
+                          "description": "This opponent holds one of the listed pairs. All compatible joint assignments have equal probability.",
+                          "hands": [
+                            "22",
+                            "33",
+                            "44",
+                            "55"
+                          ]
+                        }
+                      ],
+                      "feedback": null,
+                      "showdown": null,
+                      "review": null
+                    }
+                  },
+                  "showdown": {
+                    "summary": "Actual four-way split after a river bet",
+                    "value": {
+                      "id": "20000000-0000-4000-8000-000000000002",
+                      "session_id": "10000000-0000-4000-8000-000000000001",
+                      "created_at": "2026-10-09T10:01:00Z",
+                      "status": "completed",
+                      "street": "river",
+                      "stage": "showdown",
+                      "user_cards": [
+                        "2c",
+                        "3d"
+                      ],
+                      "community_cards": [
+                        "As",
+                        "Ks",
+                        "Qs",
+                        "Js",
+                        "Ts"
+                      ],
+                      "pot": 0,
+                      "stacks": [
+                        1000,
+                        1000,
+                        1000,
+                        1000
+                      ],
+                      "available_actions": [],
+                      "bet_amount": 10,
+                      "opponent_policy": "check_or_call",
+                      "opponent_ranges": [
+                        {
+                          "player_index": 1,
+                          "id": "small_pairs",
+                          "name": "Small pairs",
+                          "description": "This opponent holds one of the listed pairs. All compatible joint assignments have equal probability.",
+                          "hands": [
+                            "44",
+                            "55",
+                            "66",
+                            "77"
+                          ]
+                        },
+                        {
+                          "player_index": 2,
+                          "id": "small_pairs",
+                          "name": "Small pairs",
+                          "description": "This opponent holds one of the listed pairs. All compatible joint assignments have equal probability.",
+                          "hands": [
+                            "44",
+                            "55",
+                            "66",
+                            "77"
+                          ]
+                        },
+                        {
+                          "player_index": 3,
+                          "id": "small_pairs",
+                          "name": "Small pairs",
+                          "description": "This opponent holds one of the listed pairs. All compatible joint assignments have equal probability.",
+                          "hands": [
+                            "44",
+                            "55",
+                            "66",
+                            "77"
+                          ]
+                        }
+                      ],
+                      "feedback": {
+                        "action": "bet",
+                        "street": "river",
+                        "decision_board": [
+                          "As",
+                          "Ks",
+                          "Qs",
+                          "Js",
+                          "Ts"
+                        ],
+                        "pot_before_action": 120,
+                        "stacks_before_action": [
+                          970,
+                          970,
+                          970,
+                          970
+                        ],
+                        "available_actions": [
+                          "check",
+                          "bet",
+                          "fold"
+                        ],
+                        "bet_amount": 10,
+                        "analysis_policy": "check_down",
+                        "opponent_policy": "check_or_call",
+                        "simulation_method": "exact",
+                        "sample_count": 0,
+                        "confidence_level": 0.95,
+                        "outcome_probabilities": {
+                          "outright_win": 0,
+                          "two_way_tie": 0,
+                          "three_way_tie": 0,
+                          "four_way_tie": 1,
+                          "loss": 0
+                        },
+                        "outright_win_probability": {
+                          "percent": 0,
+                          "confidence_interval_percent": [
+                            0,
+                            0
+                          ],
+                          "confidence_level": 0.95,
+                          "display": "0.0%"
+                        },
+                        "equity": 0.25,
+                        "margin_of_error": 0,
+                        "equity_confidence_interval": [
+                          0.25,
+                          0.25
+                        ],
+                        "required_equity": 0.25,
+                        "action_evs": {
+                          "check": 30,
+                          "bet": 30,
+                          "fold": 0
+                        },
+                        "incremental_bet_ev": 0,
+                        "recommendation": "either",
+                        "acceptable_actions": [
+                          "check",
+                          "bet"
+                        ],
+                        "is_correct": true,
+                        "grade": "reasonable",
+                        "made_hand": "royal_flush",
+                        "explanation": [
+                          "The board gives every player a royal flush. Your outright-win probability is 0%, but your pot share is exactly 25%. Betting and checking both have EV of 30 chips from this decision onward."
+                        ]
+                      },
+                      "showdown": {
+                        "kind": "actual",
+                        "private_cards": [
+                          [
+                            "2c",
+                            "3d"
+                          ],
+                          [
+                            "4c",
+                            "4d"
+                          ],
+                          [
+                            "5c",
+                            "5d"
+                          ],
+                          [
+                            "6c",
+                            "6d"
+                          ]
+                        ],
+                        "winners": [
+                          0,
+                          1,
+                          2,
+                          3
+                        ],
+                        "winning_hand": "royal_flush",
+                        "payouts": [
+                          40,
+                          40,
+                          40,
+                          40
+                        ],
+                        "chip_changes": [
+                          0,
+                          0,
+                          0,
+                          0
+                        ],
+                        "user_chip_change": 0,
+                        "pot_awarded": 160
+                      },
+                      "review": null
+                    }
+                  },
+                  "fold": {
+                    "summary": "Actual fold loss and hypothetical shared-board review",
+                    "value": {
+                      "id": "20000000-0000-4000-8000-000000000002",
+                      "session_id": "10000000-0000-4000-8000-000000000001",
+                      "created_at": "2026-10-09T10:01:00Z",
+                      "status": "folded",
+                      "street": "river",
+                      "stage": "fold_review",
+                      "user_cards": [
+                        "2c",
+                        "3d"
+                      ],
+                      "community_cards": [
+                        "As",
+                        "Ks",
+                        "Qs",
+                        "Js",
+                        "Ts"
+                      ],
+                      "pot": 0,
+                      "stacks": [
+                        970,
+                        1010,
+                        1010,
+                        1010
+                      ],
+                      "available_actions": [],
+                      "bet_amount": 10,
+                      "opponent_policy": "check_or_call",
+                      "opponent_ranges": [
+                        {
+                          "player_index": 1,
+                          "id": "small_pairs",
+                          "name": "Small pairs",
+                          "description": "This opponent holds one of the listed pairs. All compatible joint assignments have equal probability.",
+                          "hands": [
+                            "44",
+                            "55",
+                            "66",
+                            "77"
+                          ]
+                        },
+                        {
+                          "player_index": 2,
+                          "id": "small_pairs",
+                          "name": "Small pairs",
+                          "description": "This opponent holds one of the listed pairs. All compatible joint assignments have equal probability.",
+                          "hands": [
+                            "44",
+                            "55",
+                            "66",
+                            "77"
+                          ]
+                        },
+                        {
+                          "player_index": 3,
+                          "id": "small_pairs",
+                          "name": "Small pairs",
+                          "description": "This opponent holds one of the listed pairs. All compatible joint assignments have equal probability.",
+                          "hands": [
+                            "44",
+                            "55",
+                            "66",
+                            "77"
+                          ]
+                        }
+                      ],
+                      "feedback": {
+                        "action": "fold",
+                        "street": "river",
+                        "decision_board": [
+                          "As",
+                          "Ks",
+                          "Qs",
+                          "Js",
+                          "Ts"
+                        ],
+                        "pot_before_action": 120,
+                        "stacks_before_action": [
+                          970,
+                          970,
+                          970,
+                          970
+                        ],
+                        "available_actions": [
+                          "check",
+                          "bet",
+                          "fold"
+                        ],
+                        "bet_amount": 10,
+                        "analysis_policy": "check_down",
+                        "opponent_policy": "check_or_call",
+                        "simulation_method": "exact",
+                        "sample_count": 0,
+                        "confidence_level": 0.95,
+                        "outcome_probabilities": {
+                          "outright_win": 0,
+                          "two_way_tie": 0,
+                          "three_way_tie": 0,
+                          "four_way_tie": 1,
+                          "loss": 0
+                        },
+                        "outright_win_probability": {
+                          "percent": 0,
+                          "confidence_interval_percent": [
+                            0,
+                            0
+                          ],
+                          "confidence_level": 0.95,
+                          "display": "0.0%"
+                        },
+                        "equity": 0.25,
+                        "margin_of_error": 0,
+                        "equity_confidence_interval": [
+                          0.25,
+                          0.25
+                        ],
+                        "required_equity": 0.25,
+                        "action_evs": {
+                          "check": 30,
+                          "bet": 30,
+                          "fold": 0
+                        },
+                        "incremental_bet_ev": 0,
+                        "recommendation": "either",
+                        "acceptable_actions": [
+                          "check",
+                          "bet"
+                        ],
+                        "is_correct": false,
+                        "grade": "bad",
+                        "made_hand": "royal_flush",
+                        "explanation": [
+                          "Checking guarantees an equal share of this pot. Folding forfeits that share and has EV 0 from this decision onward. The later hypothetical review does not change this grade."
+                        ]
+                      },
+                      "showdown": null,
+                      "review": {
+                        "kind": "hypothetical",
+                        "private_cards": [
+                          [
+                            "2c",
+                            "3d"
+                          ],
+                          [
+                            "4c",
+                            "4d"
+                          ],
+                          [
+                            "5c",
+                            "5d"
+                          ],
+                          [
+                            "6c",
+                            "6d"
+                          ]
+                        ],
+                        "winners": [
+                          0,
+                          1,
+                          2,
+                          3
+                        ],
+                        "winning_hand": "royal_flush",
+                        "hypothetical_payouts": [
+                          30,
+                          30,
+                          30,
+                          30
+                        ],
+                        "actual_winners": [
+                          1,
+                          2,
+                          3
+                        ],
+                        "actual_payouts": [
+                          0,
+                          40,
+                          40,
+                          40
+                        ],
+                        "actual_chip_changes": [
+                          -30,
+                          10,
+                          10,
+                          10
+                        ],
+                        "pot_awarded": 120,
+                        "user_chip_change": -30,
+                        "user_payout": 0,
+                        "explanation": "If you had checked, all four players would have received 30. You folded, so the three opponents receive 40 each. Your actual loss is the 30 chips already committed."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown resource, or hand does not belong to the specified session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                },
+                "examples": {
+                  "example": {
+                    "summary": "Stable error envelope",
+                    "value": {
+                      "code": "hand_not_found",
+                      "message": "The requested hand does not exist in this session."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "JSON, path, or query validation failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                },
+                "examples": {
+                  "example": {
+                    "summary": "Stable error envelope",
+                    "value": {
+                      "code": "validation_error",
+                      "message": "The request does not satisfy the schema."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Hands"
+        ]
+      }
+    },
+    "/api/v1/sessions/{session_id}/hands/{hand_id}/replay": {
+      "get": {
+        "summary": "Get Replay",
+        "description": "Read one immutable zero-based recorded state. step defaults to 0, the initial flop. total_steps permits navigation and step must be less than total_steps. Return only cards and original feedback visible at that stage. Never recompute, update grades, reveal later cards, or backfill an eventual outcome. Invalid step returns 422/replay_step_out_of_range; malformed query returns 422/validation_error.",
+        "operationId": "getReplay",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ID"
+            },
+            "description": "Owning session ID."
+          },
+          {
+            "name": "hand_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ID"
+            },
+            "description": "Hand ID belonging to this session."
+          },
+          {
+            "name": "step",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Step"
+            },
+            "description": "Zero-based recorded snapshot index; must be less than total_steps."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Recorded stage.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReplayResponse"
+                },
+                "examples": {
+                  "initial": {
+                    "summary": "Initial snapshot remains unrevealed even after completion",
+                    "value": {
+                      "read_only": true,
+                      "hand_status": "completed",
+                      "step": 0,
+                      "total_steps": 7,
+                      "event": "deal",
+                      "state": {
+                        "id": "20000000-0000-4000-8000-000000000001",
+                        "session_id": "10000000-0000-4000-8000-000000000001",
+                        "created_at": "2026-10-09T10:01:00Z",
+                        "status": "active",
+                        "street": "flop",
+                        "stage": "awaiting_action",
+                        "user_cards": [
+                          "As",
+                          "Ks"
+                        ],
+                        "community_cards": [
+                          "Qs",
+                          "Js",
+                          "Ts"
+                        ],
+                        "pot": 40,
+                        "stacks": [
+                          990,
+                          990,
+                          990,
+                          990
+                        ],
+                        "available_actions": [
+                          "check",
+                          "bet",
+                          "fold"
+                        ],
+                        "bet_amount": 10,
+                        "opponent_policy": "check_or_call",
+                        "opponent_ranges": [
+                          {
+                            "player_index": 1,
+                            "id": "small_pairs",
+                            "name": "Small pairs",
+                            "description": "This opponent holds one of the listed pairs. All compatible joint assignments have equal probability.",
+                            "hands": [
+                              "22",
+                              "33",
+                              "44",
+                              "55"
+                            ]
+                          },
+                          {
+                            "player_index": 2,
+                            "id": "small_pairs",
+                            "name": "Small pairs",
+                            "description": "This opponent holds one of the listed pairs. All compatible joint assignments have equal probability.",
+                            "hands": [
+                              "22",
+                              "33",
+                              "44",
+                              "55"
+                            ]
+                          },
+                          {
+                            "player_index": 3,
+                            "id": "small_pairs",
+                            "name": "Small pairs",
+                            "description": "This opponent holds one of the listed pairs. All compatible joint assignments have equal probability.",
+                            "hands": [
+                              "22",
+                              "33",
+                              "44",
+                              "55"
+                            ]
+                          }
+                        ],
+                        "feedback": null,
+                        "showdown": null,
+                        "review": null
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown resource, or hand does not belong to the specified session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                },
+                "examples": {
+                  "example": {
+                    "summary": "Stable error envelope",
+                    "value": {
+                      "code": "hand_not_found",
+                      "message": "The requested hand does not exist in this session."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "JSON, path, or query validation failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                },
+                "examples": {
+                  "example": {
+                    "summary": "Stable error envelope",
+                    "value": {
+                      "code": "validation_error",
+                      "message": "The request does not satisfy the schema."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Replay"
+        ]
+      }
+    },
+    "/api/v1/sessions/{session_id}/hands/{hand_id}/actions": {
+      "post": {
+        "summary": "Submit Action",
+        "description": "Require an active session, active hand, awaiting_action stage, matching street, and a legal action. Evaluate against the frozen analysis for that visible decision. check changes no chips; bet deducts 10 from all four stacks and adds 40 to the pot. Both publish feedback and enter awaiting_continuation without revealing a new card. fold publishes the same information-based grading, reveals the fixed full board for a hypothetical review, and settles the actual pot among the three opponents with user payout 0. Save feedback and replay, count the grade, and update balances/state atomically once. A stale street or repeated action returns 409; GET hand retrieves an already committed result after an uncertain retry. Feedback must never rerun on retry.",
+        "operationId": "submitAction",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ID"
+            },
+            "description": "Owning session ID."
+          },
+          {
+            "name": "hand_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ID"
+            },
+            "description": "Hand ID belonging to this session."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActionRequest"
+              },
+              "examples": {
+                "check": {
+                  "summary": "Check the current street",
+                  "value": {
+                    "action": "check",
+                    "street": "flop"
+                  }
+                },
+                "bet": {
+                  "summary": "Fixed bet, with no client bet amount",
+                  "value": {
+                    "action": "bet",
+                    "street": "flop"
+                  }
+                },
+                "fold": {
+                  "summary": "Fold the current street",
+                  "value": {
+                    "action": "fold",
+                    "street": "turn"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Action applied once with saved feedback.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HandResponse"
+                },
+                "examples": {
+                  "bet": {
+                    "summary": "Royal-flush bet gains 30 EV over checking",
+                    "value": {
+                      "id": "20000000-0000-4000-8000-000000000001",
+                      "session_id": "10000000-0000-4000-8000-000000000001",
+                      "created_at": "2026-10-09T10:01:00Z",
+                      "status": "active",
+                      "street": "flop",
+                      "stage": "awaiting_continuation",
+                      "user_cards": [
+                        "As",
+                        "Ks"
+                      ],
+                      "community_cards": [
+                        "Qs",
+                        "Js",
+                        "Ts"
+                      ],
+                      "pot": 80,
+                      "stacks": [
+                        980,
+                        980,
+                        980,
+                        980
+                      ],
+                      "available_actions": [],
+                      "bet_amount": 10,
+                      "opponent_policy": "check_or_call",
+                      "opponent_ranges": [
+                        {
+                          "player_index": 1,
+                          "id": "small_pairs",
+                          "name": "Small pairs",
+                          "description": "This opponent holds one of the listed pairs. All compatible joint assignments have equal probability.",
+                          "hands": [
+                            "22",
+                            "33",
+                            "44",
+                            "55"
+                          ]
+                        },
+                        {
+                          "player_index": 2,
+                          "id": "small_pairs",
+                          "name": "Small pairs",
+                          "description": "This opponent holds one of the listed pairs. All compatible joint assignments have equal probability.",
+                          "hands": [
+                            "22",
+                            "33",
+                            "44",
+                            "55"
+                          ]
+                        },
+                        {
+                          "player_index": 3,
+                          "id": "small_pairs",
+                          "name": "Small pairs",
+                          "description": "This opponent holds one of the listed pairs. All compatible joint assignments have equal probability.",
+                          "hands": [
+                            "22",
+                            "33",
+                            "44",
+                            "55"
+                          ]
+                        }
+                      ],
+                      "feedback": {
+                        "action": "bet",
+                        "street": "flop",
+                        "decision_board": [
+                          "Qs",
+                          "Js",
+                          "Ts"
+                        ],
+                        "pot_before_action": 40,
+                        "stacks_before_action": [
+                          990,
+                          990,
+                          990,
+                          990
+                        ],
+                        "available_actions": [
+                          "check",
+                          "bet",
+                          "fold"
+                        ],
+                        "bet_amount": 10,
+                        "analysis_policy": "check_down",
+                        "opponent_policy": "check_or_call",
+                        "simulation_method": "exact",
+                        "sample_count": 0,
+                        "confidence_level": 0.95,
+                        "outcome_probabilities": {
+                          "outright_win": 1,
+                          "two_way_tie": 0,
+                          "three_way_tie": 0,
+                          "four_way_tie": 0,
+                          "loss": 0
+                        },
+                        "outright_win_probability": {
+                          "percent": 100,
+                          "confidence_interval_percent": [
+                            100,
+                            100
+                          ],
+                          "confidence_level": 0.95,
+                          "display": "100.0%"
+                        },
+                        "equity": 1,
+                        "margin_of_error": 0,
+                        "equity_confidence_interval": [
+                          1,
+                          1
+                        ],
+                        "required_equity": 0.25,
+                        "action_evs": {
+                          "check": 40,
+                          "bet": 70,
+                          "fold": 0
+                        },
+                        "incremental_bet_ev": 30,
+                        "recommendation": "bet",
+                        "acceptable_actions": [
+                          "bet"
+                        ],
+                        "is_correct": true,
+                        "grade": "good",
+                        "made_hand": "royal_flush",
+                        "explanation": [
+                          "Your royal flush always wins. Betting adds an expected 30 chips over checking, because all three opponents call."
+                        ]
+                      },
+                      "showdown": null,
+                      "review": null
+                    }
+                  },
+                  "fold": {
+                    "summary": "Folding a guaranteed four-way split loses actual chips",
+                    "value": {
+                      "id": "20000000-0000-4000-8000-000000000002",
+                      "session_id": "10000000-0000-4000-8000-000000000001",
+                      "created_at": "2026-10-09T10:01:00Z",
+                      "status": "folded",
+                      "street": "river",
+                      "stage": "fold_review",
+                      "user_cards": [
+                        "2c",
+                        "3d"
+                      ],
+                      "community_cards": [
+                        "As",
+                        "Ks",
+                        "Qs",
+                        "Js",
+                        "Ts"
+                      ],
+                      "pot": 0,
+                      "stacks": [
+                        970,
+                        1010,
+                        1010,
+                        1010
+                      ],
+                      "available_actions": [],
+                      "bet_amount": 10,
+                      "opponent_policy": "check_or_call",
+                      "opponent_ranges": [
+                        {
+                          "player_index": 1,
+                          "id": "small_pairs",
+                          "name": "Small pairs",
+                          "description": "This opponent holds one of the listed pairs. All compatible joint assignments have equal probability.",
+                          "hands": [
+                            "44",
+                            "55",
+                            "66",
+                            "77"
+                          ]
+                        },
+                        {
+                          "player_index": 2,
+                          "id": "small_pairs",
+                          "name": "Small pairs",
+                          "description": "This opponent holds one of the listed pairs. All compatible joint assignments have equal probability.",
+                          "hands": [
+                            "44",
+                            "55",
+                            "66",
+                            "77"
+                          ]
+                        },
+                        {
+                          "player_index": 3,
+                          "id": "small_pairs",
+                          "name": "Small pairs",
+                          "description": "This opponent holds one of the listed pairs. All compatible joint assignments have equal probability.",
+                          "hands": [
+                            "44",
+                            "55",
+                            "66",
+                            "77"
+                          ]
+                        }
+                      ],
+                      "feedback": {
+                        "action": "fold",
+                        "street": "river",
+                        "decision_board": [
+                          "As",
+                          "Ks",
+                          "Qs",
+                          "Js",
+                          "Ts"
+                        ],
+                        "pot_before_action": 120,
+                        "stacks_before_action": [
+                          970,
+                          970,
+                          970,
+                          970
+                        ],
+                        "available_actions": [
+                          "check",
+                          "bet",
+                          "fold"
+                        ],
+                        "bet_amount": 10,
+                        "analysis_policy": "check_down",
+                        "opponent_policy": "check_or_call",
+                        "simulation_method": "exact",
+                        "sample_count": 0,
+                        "confidence_level": 0.95,
+                        "outcome_probabilities": {
+                          "outright_win": 0,
+                          "two_way_tie": 0,
+                          "three_way_tie": 0,
+                          "four_way_tie": 1,
+                          "loss": 0
+                        },
+                        "outright_win_probability": {
+                          "percent": 0,
+                          "confidence_interval_percent": [
+                            0,
+                            0
+                          ],
+                          "confidence_level": 0.95,
+                          "display": "0.0%"
+                        },
+                        "equity": 0.25,
+                        "margin_of_error": 0,
+                        "equity_confidence_interval": [
+                          0.25,
+                          0.25
+                        ],
+                        "required_equity": 0.25,
+                        "action_evs": {
+                          "check": 30,
+                          "bet": 30,
+                          "fold": 0
+                        },
+                        "incremental_bet_ev": 0,
+                        "recommendation": "either",
+                        "acceptable_actions": [
+                          "check",
+                          "bet"
+                        ],
+                        "is_correct": false,
+                        "grade": "bad",
+                        "made_hand": "royal_flush",
+                        "explanation": [
+                          "Checking guarantees an equal share of this pot. Folding forfeits that share and has EV 0 from this decision onward. The later hypothetical review does not change this grade."
+                        ]
+                      },
+                      "showdown": null,
+                      "review": {
+                        "kind": "hypothetical",
+                        "private_cards": [
+                          [
+                            "2c",
+                            "3d"
+                          ],
+                          [
+                            "4c",
+                            "4d"
+                          ],
+                          [
+                            "5c",
+                            "5d"
+                          ],
+                          [
+                            "6c",
+                            "6d"
+                          ]
+                        ],
+                        "winners": [
+                          0,
+                          1,
+                          2,
+                          3
+                        ],
+                        "winning_hand": "royal_flush",
+                        "hypothetical_payouts": [
+                          30,
+                          30,
+                          30,
+                          30
+                        ],
+                        "actual_winners": [
+                          1,
+                          2,
+                          3
+                        ],
+                        "actual_payouts": [
+                          0,
+                          40,
+                          40,
+                          40
+                        ],
+                        "actual_chip_changes": [
+                          -30,
+                          10,
+                          10,
+                          10
+                        ],
+                        "pot_awarded": 120,
+                        "user_chip_change": -30,
+                        "user_payout": 0,
+                        "explanation": "If you had checked, all four players would have received 30. You folded, so the three opponents receive 40 each. Your actual loss is the 30 chips already committed."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                },
+                "examples": {
+                  "example": {
+                    "summary": "Stable error envelope",
+                    "value": {
+                      "code": "invalid_request",
+                      "message": "Request body is not valid JSON."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown resource, or hand does not belong to the specified session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                },
+                "examples": {
+                  "example": {
+                    "summary": "Stable error envelope",
+                    "value": {
+                      "code": "hand_not_found",
+                      "message": "The requested hand does not exist in this session."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The current resource state conflicts with this operation; no partial mutation occurs.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                },
+                "examples": {
+                  "example": {
+                    "summary": "Stable error envelope",
+                    "value": {
+                      "code": "invalid_stage",
+                      "message": "The operation is not valid in the current stage."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Content-Type must be application/json.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                },
+                "examples": {
+                  "example": {
+                    "summary": "Stable error envelope",
+                    "value": {
+                      "code": "unsupported_media_type",
+                      "message": "Send the request as application/json."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "JSON, path, or query validation failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                },
+                "examples": {
+                  "example": {
+                    "summary": "Stable error envelope",
+                    "value": {
+                      "code": "validation_error",
+                      "message": "The request does not satisfy the schema."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Analysis temporarily unavailable; no cards, balances, state, or statistics have changed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                },
+                "examples": {
+                  "example": {
+                    "summary": "Stable error envelope",
+                    "value": {
+                      "code": "simulation_unavailable",
+                      "message": "Analysis is temporarily unavailable. Retry or retrieve the saved hand."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Decisions"
+        ]
+      }
+    },
+    "/api/v1/sessions/{session_id}/hands/{hand_id}/continue": {
+      "post": {
+        "summary": "Continue Hand",
+        "description": "Require active session, active hand, awaiting_continuation, and the saved feedback’s street. After flop/turn, reveal exactly one fixed card and prepare that street’s unpublished analysis before returning awaiting_action with feedback=null. After river, settle the pot once and return completed/showdown. No continuation follows a fold or abandonment. Repeated or stale continuation returns 409 without additional reveal or payout; GET hand retrieves the latest committed result.",
+        "operationId": "continueHand",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ID"
+            },
+            "description": "Owning session ID."
+          },
+          {
+            "name": "hand_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ID"
+            },
+            "description": "Hand ID belonging to this session."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContinueRequest"
+              },
+              "examples": {
+                "flop": {
+                  "summary": "Continue after saved flop feedback",
+                  "value": {
+                    "street": "flop"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "One street reveal or actual showdown settlement.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HandResponse"
+                },
+                "examples": {
+                  "turn": {
+                    "summary": "Turn awaiting a fresh decision",
+                    "value": {
+                      "id": "20000000-0000-4000-8000-000000000001",
+                      "session_id": "10000000-0000-4000-8000-000000000001",
+                      "created_at": "2026-10-09T10:01:00Z",
+                      "status": "active",
+                      "street": "turn",
+                      "stage": "awaiting_action",
+                      "user_cards": [
+                        "As",
+                        "Ks"
+                      ],
+                      "community_cards": [
+                        "Qs",
+                        "Js",
+                        "Ts",
+                        "2c"
+                      ],
+                      "pot": 80,
+                      "stacks": [
+                        980,
+                        980,
+                        980,
+                        980
+                      ],
+                      "available_actions": [
+                        "check",
+                        "bet",
+                        "fold"
+                      ],
+                      "bet_amount": 10,
+                      "opponent_policy": "check_or_call",
+                      "opponent_ranges": [
+                        {
+                          "player_index": 1,
+                          "id": "small_pairs",
+                          "name": "Small pairs",
+                          "description": "This opponent holds one of the listed pairs. All compatible joint assignments have equal probability.",
+                          "hands": [
+                            "22",
+                            "33",
+                            "44",
+                            "55"
+                          ]
+                        },
+                        {
+                          "player_index": 2,
+                          "id": "small_pairs",
+                          "name": "Small pairs",
+                          "description": "This opponent holds one of the listed pairs. All compatible joint assignments have equal probability.",
+                          "hands": [
+                            "22",
+                            "33",
+                            "44",
+                            "55"
+                          ]
+                        },
+                        {
+                          "player_index": 3,
+                          "id": "small_pairs",
+                          "name": "Small pairs",
+                          "description": "This opponent holds one of the listed pairs. All compatible joint assignments have equal probability.",
+                          "hands": [
+                            "22",
+                            "33",
+                            "44",
+                            "55"
+                          ]
+                        }
+                      ],
+                      "feedback": null,
+                      "showdown": null,
+                      "review": null
+                    }
+                  },
+                  "showdown": {
+                    "summary": "Four-way tie returns each player’s contribution",
+                    "value": {
+                      "id": "20000000-0000-4000-8000-000000000002",
+                      "session_id": "10000000-0000-4000-8000-000000000001",
+                      "created_at": "2026-10-09T10:01:00Z",
+                      "status": "completed",
+                      "street": "river",
+                      "stage": "showdown",
+                      "user_cards": [
+                        "2c",
+                        "3d"
+                      ],
+                      "community_cards": [
+                        "As",
+                        "Ks",
+                        "Qs",
+                        "Js",
+                        "Ts"
+                      ],
+                      "pot": 0,
+                      "stacks": [
+                        1000,
+                        1000,
+                        1000,
+                        1000
+                      ],
+                      "available_actions": [],
+                      "bet_amount": 10,
+                      "opponent_policy": "check_or_call",
+                      "opponent_ranges": [
+                        {
+                          "player_index": 1,
+                          "id": "small_pairs",
+                          "name": "Small pairs",
+                          "description": "This opponent holds one of the listed pairs. All compatible joint assignments have equal probability.",
+                          "hands": [
+                            "44",
+                            "55",
+                            "66",
+                            "77"
+                          ]
+                        },
+                        {
+                          "player_index": 2,
+                          "id": "small_pairs",
+                          "name": "Small pairs",
+                          "description": "This opponent holds one of the listed pairs. All compatible joint assignments have equal probability.",
+                          "hands": [
+                            "44",
+                            "55",
+                            "66",
+                            "77"
+                          ]
+                        },
+                        {
+                          "player_index": 3,
+                          "id": "small_pairs",
+                          "name": "Small pairs",
+                          "description": "This opponent holds one of the listed pairs. All compatible joint assignments have equal probability.",
+                          "hands": [
+                            "44",
+                            "55",
+                            "66",
+                            "77"
+                          ]
+                        }
+                      ],
+                      "feedback": {
+                        "action": "bet",
+                        "street": "river",
+                        "decision_board": [
+                          "As",
+                          "Ks",
+                          "Qs",
+                          "Js",
+                          "Ts"
+                        ],
+                        "pot_before_action": 120,
+                        "stacks_before_action": [
+                          970,
+                          970,
+                          970,
+                          970
+                        ],
+                        "available_actions": [
+                          "check",
+                          "bet",
+                          "fold"
+                        ],
+                        "bet_amount": 10,
+                        "analysis_policy": "check_down",
+                        "opponent_policy": "check_or_call",
+                        "simulation_method": "exact",
+                        "sample_count": 0,
+                        "confidence_level": 0.95,
+                        "outcome_probabilities": {
+                          "outright_win": 0,
+                          "two_way_tie": 0,
+                          "three_way_tie": 0,
+                          "four_way_tie": 1,
+                          "loss": 0
+                        },
+                        "outright_win_probability": {
+                          "percent": 0,
+                          "confidence_interval_percent": [
+                            0,
+                            0
+                          ],
+                          "confidence_level": 0.95,
+                          "display": "0.0%"
+                        },
+                        "equity": 0.25,
+                        "margin_of_error": 0,
+                        "equity_confidence_interval": [
+                          0.25,
+                          0.25
+                        ],
+                        "required_equity": 0.25,
+                        "action_evs": {
+                          "check": 30,
+                          "bet": 30,
+                          "fold": 0
+                        },
+                        "incremental_bet_ev": 0,
+                        "recommendation": "either",
+                        "acceptable_actions": [
+                          "check",
+                          "bet"
+                        ],
+                        "is_correct": true,
+                        "grade": "reasonable",
+                        "made_hand": "royal_flush",
+                        "explanation": [
+                          "The board gives every player a royal flush. Your outright-win probability is 0%, but your pot share is exactly 25%. Betting and checking both have EV of 30 chips from this decision onward."
+                        ]
+                      },
+                      "showdown": {
+                        "kind": "actual",
+                        "private_cards": [
+                          [
+                            "2c",
+                            "3d"
+                          ],
+                          [
+                            "4c",
+                            "4d"
+                          ],
+                          [
+                            "5c",
+                            "5d"
+                          ],
+                          [
+                            "6c",
+                            "6d"
+                          ]
+                        ],
+                        "winners": [
+                          0,
+                          1,
+                          2,
+                          3
+                        ],
+                        "winning_hand": "royal_flush",
+                        "payouts": [
+                          40,
+                          40,
+                          40,
+                          40
+                        ],
+                        "chip_changes": [
+                          0,
+                          0,
+                          0,
+                          0
+                        ],
+                        "user_chip_change": 0,
+                        "pot_awarded": 160
+                      },
+                      "review": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                },
+                "examples": {
+                  "example": {
+                    "summary": "Stable error envelope",
+                    "value": {
+                      "code": "invalid_request",
+                      "message": "Request body is not valid JSON."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown resource, or hand does not belong to the specified session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                },
+                "examples": {
+                  "example": {
+                    "summary": "Stable error envelope",
+                    "value": {
+                      "code": "hand_not_found",
+                      "message": "The requested hand does not exist in this session."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The current resource state conflicts with this operation; no partial mutation occurs.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                },
+                "examples": {
+                  "example": {
+                    "summary": "Stable error envelope",
+                    "value": {
+                      "code": "invalid_stage",
+                      "message": "The operation is not valid in the current stage."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Content-Type must be application/json.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                },
+                "examples": {
+                  "example": {
+                    "summary": "Stable error envelope",
+                    "value": {
+                      "code": "unsupported_media_type",
+                      "message": "Send the request as application/json."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "JSON, path, or query validation failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                },
+                "examples": {
+                  "example": {
+                    "summary": "Stable error envelope",
+                    "value": {
+                      "code": "validation_error",
+                      "message": "The request does not satisfy the schema."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Analysis temporarily unavailable; no cards, balances, state, or statistics have changed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                },
+                "examples": {
+                  "example": {
+                    "summary": "Stable error envelope",
+                    "value": {
+                      "code": "simulation_unavailable",
+                      "message": "Analysis is temporarily unavailable. Retry or retrieve the saved hand."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Decisions"
+        ]
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "CreationKey": {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "required": true,
+        "description": "Client-generated UUID for one intentional creation. Successful keys are globally unique across session and hand creation and bind to method/path and parent. Reuse returns 409/creation_request_replayed before state mutation, even after deletion or restart. Tombstones survive history deletion. Failed requests do not consume keys. Missing/malformed keys return 422/validation_error.",
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    },
+    "schemas": {
+      "HandCategory": {
+        "type": "string",
+        "enum": [
+          "high_card",
+          "pair",
+          "two_pair",
+          "three_of_a_kind",
+          "straight",
+          "flush",
+          "full_house",
+          "four_of_a_kind",
+          "straight_flush",
+          "royal_flush"
+        ],
+        "description": "Machine-readable snake_case best-five-card category. Human-readable teaching text is separate. Royal flush is distinguished from other straight flushes."
+      },
+      "ID": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Opaque server-generated resource identifier."
+      },
+      "Card": {
+        "type": "string",
+        "pattern": "^[2-9TJQKA][cdhs]$",
+        "description": "One physical card. Rank 2–9, T, J, Q, K, A, followed by suit c, d, h, s. Case is significant. Example: As."
+      },
+      "HoleCards": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/Card"
+        },
+        "minItems": 2,
+        "maxItems": 2,
+        "uniqueItems": true,
+        "description": "Exactly two distinct private cards."
+      },
+      "Board": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/Card"
+        },
+        "minItems": 3,
+        "maxItems": 5,
+        "uniqueItems": true,
+        "description": "Distinct community cards in deal order. Street and stage determine the exact count."
+      },
+      "FractionInterval": {
+        "type": "array",
+        "items": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "minItems": 2,
+        "maxItems": 2,
+        "description": "[lower, upper], with 0 <= lower <= upper <= 1. Arithmetic relationships are enforced by the backend."
+      },
+      "PercentInterval": {
+        "type": "array",
+        "items": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "minItems": 2,
+        "maxItems": 2,
+        "description": "[lower, upper] in percent, with lower <= upper."
+      },
+      "ChipAmount": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 4000000000,
+        "description": "Finite nonnegative fictional chip amount. Exact fractional payouts are permitted for split pots."
+      },
+      "ChipChange": {
+        "type": "number",
+        "minimum": -4000000000,
+        "maximum": 4000000000,
+        "description": "Finite signed fictional chip change."
+      },
+      "Pot": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 4000000000,
+        "description": "Unawarded pot. Includes opening contributions and all completed bets. Becomes zero after settlement or an abandonment refund."
+      },
+      "Stacks": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/ChipAmount"
+        },
+        "minItems": 4,
+        "maxItems": 4,
+        "description": "Balances ordered user (0), opponent 1, opponent 2, opponent 3."
+      },
+      "ChipChanges": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/ChipChange"
+        },
+        "minItems": 4,
+        "maxItems": 4,
+        "description": "Changes from each player’s balance immediately before the hand’s opening contribution."
+      },
+      "PrivateCards": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/HoleCards"
+        },
+        "minItems": 4,
+        "maxItems": 4,
+        "description": "Private cards ordered user, opponent 1, opponent 2, opponent 3. All eight cards and the board must be mutually distinct."
+      },
+      "WinnerIndices": {
+        "type": "array",
+        "items": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3
+        },
+        "minItems": 1,
+        "maxItems": 4,
+        "uniqueItems": true,
+        "description": "Ascending, distinct player indices whose best five-card hands tie for the best eligible hand."
+      },
+      "Action": {
+        "type": "string",
+        "enum": [
+          "check",
+          "bet",
+          "fold"
+        ]
+      },
+      "Street": {
+        "type": "string",
+        "enum": [
+          "flop",
+          "turn",
+          "river"
+        ]
+      },
+      "EmptyRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [],
+        "properties": {},
+        "description": "An empty JSON object is required. Client-selected cards, seeds, ranges, or bet amounts are not accepted.",
+        "maxProperties": 0
+      },
+      "ActionRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "action",
+          "street"
+        ],
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/Action"
+          },
+          "street": {
+            "$ref": "#/components/schemas/Street"
+          }
+        },
+        "description": "The requested street must equal the current decision street and stage must be awaiting_action. Server checks action legality against available_actions."
+      },
+      "ContinueRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "street"
+        ],
+        "properties": {
+          "street": {
+            "$ref": "#/components/schemas/Street"
+          }
+        },
+        "description": "The street must equal the saved feedback’s street and stage must be awaiting_continuation. Repeated or stale continuation returns 409."
+      },
+      "HandClass": {
+        "type": "string",
+        "enum": [
+          "AA",
+          "AKs",
+          "AKo",
+          "AQs",
+          "AQo",
+          "AJs",
+          "AJo",
+          "ATs",
+          "ATo",
+          "A9s",
+          "A9o",
+          "A8s",
+          "A8o",
+          "A7s",
+          "A7o",
+          "A6s",
+          "A6o",
+          "A5s",
+          "A5o",
+          "A4s",
+          "A4o",
+          "A3s",
+          "A3o",
+          "A2s",
+          "A2o",
+          "KK",
+          "KQs",
+          "KQo",
+          "KJs",
+          "KJo",
+          "KTs",
+          "KTo",
+          "K9s",
+          "K9o",
+          "K8s",
+          "K8o",
+          "K7s",
+          "K7o",
+          "K6s",
+          "K6o",
+          "K5s",
+          "K5o",
+          "K4s",
+          "K4o",
+          "K3s",
+          "K3o",
+          "K2s",
+          "K2o",
+          "QQ",
+          "QJs",
+          "QJo",
+          "QTs",
+          "QTo",
+          "Q9s",
+          "Q9o",
+          "Q8s",
+          "Q8o",
+          "Q7s",
+          "Q7o",
+          "Q6s",
+          "Q6o",
+          "Q5s",
+          "Q5o",
+          "Q4s",
+          "Q4o",
+          "Q3s",
+          "Q3o",
+          "Q2s",
+          "Q2o",
+          "JJ",
+          "JTs",
+          "JTo",
+          "J9s",
+          "J9o",
+          "J8s",
+          "J8o",
+          "J7s",
+          "J7o",
+          "J6s",
+          "J6o",
+          "J5s",
+          "J5o",
+          "J4s",
+          "J4o",
+          "J3s",
+          "J3o",
+          "J2s",
+          "J2o",
+          "TT",
+          "T9s",
+          "T9o",
+          "T8s",
+          "T8o",
+          "T7s",
+          "T7o",
+          "T6s",
+          "T6o",
+          "T5s",
+          "T5o",
+          "T4s",
+          "T4o",
+          "T3s",
+          "T3o",
+          "T2s",
+          "T2o",
+          "99",
+          "98s",
+          "98o",
+          "97s",
+          "97o",
+          "96s",
+          "96o",
+          "95s",
+          "95o",
+          "94s",
+          "94o",
+          "93s",
+          "93o",
+          "92s",
+          "92o",
+          "88",
+          "87s",
+          "87o",
+          "86s",
+          "86o",
+          "85s",
+          "85o",
+          "84s",
+          "84o",
+          "83s",
+          "83o",
+          "82s",
+          "82o",
+          "77",
+          "76s",
+          "76o",
+          "75s",
+          "75o",
+          "74s",
+          "74o",
+          "73s",
+          "73o",
+          "72s",
+          "72o",
+          "66",
+          "65s",
+          "65o",
+          "64s",
+          "64o",
+          "63s",
+          "63o",
+          "62s",
+          "62o",
+          "55",
+          "54s",
+          "54o",
+          "53s",
+          "53o",
+          "52s",
+          "52o",
+          "44",
+          "43s",
+          "43o",
+          "42s",
+          "42o",
+          "33",
+          "32s",
+          "32o",
+          "22"
+        ],
+        "description": "One of the 169 canonical Hold’em classes. Pairs use AA. Unpaired ranks are high first, with s for suited or o for offsuit, such as AKs or AKo. T denotes ten. Range shortcuts such as QQ+, AK, and A5s-A2s are not accepted."
+      },
+      "OpponentRange": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "player_index",
+          "id",
+          "name",
+          "description",
+          "hands"
+        ],
+        "properties": {
+          "player_index": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 3,
+            "description": "Seat to which this range applies."
+          },
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9_-]+$"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80,
+            "description": "Short visible name of the range."
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000,
+            "description": "Visible assumption. Describes the opponent without disclosing an answer or actual private cards."
+          },
+          "hands": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HandClass"
+            },
+            "minItems": 1,
+            "maxItems": 169,
+            "uniqueItems": true,
+            "description": "Expand classes into concrete unordered two-card combinations. Each legal JOINT assignment of all three labelled opponents receives equal weight. A class is not one equally weighted outcome."
+          }
+        },
+        "description": "The server discloses one fixed range per opponent before a decision. Default ranges contain all 169 classes. Server-configured narrower ranges are allowed and must be disclosed; they stay unchanged throughout a hand."
+      },
+      "OpponentRanges": {
+        "type": "array",
+        "minItems": 3,
+        "maxItems": 3,
+        "prefixItems": [
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OpponentRange"
+              },
+              {
+                "properties": {
+                  "player_index": {
+                    "const": 1
+                  }
+                },
+                "required": [
+                  "player_index"
+                ]
+              }
+            ]
+          },
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OpponentRange"
+              },
+              {
+                "properties": {
+                  "player_index": {
+                    "const": 2
+                  }
+                },
+                "required": [
+                  "player_index"
+                ]
+              }
+            ]
+          },
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OpponentRange"
+              },
+              {
+                "properties": {
+                  "player_index": {
+                    "const": 3
+                  }
+                },
+                "required": [
+                  "player_index"
+                ]
+              }
+            ]
+          }
+        ],
+        "items": false,
+        "description": "Three labelled ranges ordered opponent 1, opponent 2, opponent 3. At least one collision-free joint assignment must remain after visible blockers are removed."
+      },
+      "GameRules": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "player_count",
+          "starting_stack",
+          "opening_contribution",
+          "bet_amount",
+          "opponent_policy",
+          "analysis_policy"
+        ],
+        "properties": {
+          "player_count": {
+            "type": "integer",
+            "const": 4
+          },
+          "starting_stack": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000000000,
+            "default": 1000,
+            "description": "Configured initial stack per player from POKER_TUTOR_STARTING_STACK. Must cover opening_contribution. All seats start a session with this amount; subsequent hands carry forward actual balances rather than resetting."
+          },
+          "opening_contribution": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000000000,
+            "default": 10,
+            "description": "Equal forced contribution configured by POKER_TUTOR_OPENING_CONTRIBUTION. New hand requires every carried seat balance to cover it. Opening pot is four times this amount."
+          },
+          "bet_amount": {
+            "type": "integer",
+            "const": 10,
+            "description": "Each bet charges every player 10 and adds 40 to the pot."
+          },
+          "opponent_policy": {
+            "type": "string",
+            "const": "check_or_call",
+            "description": "Opponents check when the user checks, call the full fixed bet when the user bets, and never independently bet, raise, or fold."
+          },
+          "analysis_policy": {
+            "type": "string",
+            "const": "check_down",
+            "description": "For current-action EV calculations, every remaining street checks through to showdown. Actual later user choices remain independent practice decisions."
+          }
+        },
+        "description": "Rules are fixed for the session and returned to the client. This model has no rake, ICM, side pots, raises, partial calls, or all-ins. A bet is legal only when all four stacks cover 10."
+      },
+      "OutcomeProbabilities": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "outright_win",
+          "two_way_tie",
+          "three_way_tie",
+          "four_way_tie",
+          "loss"
+        ],
+        "properties": {
+          "outright_win": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Probability that the user alone has the best five-card hand."
+          },
+          "two_way_tie": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Probability that the user ties for best with exactly one opponent."
+          },
+          "three_way_tie": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Probability that the user ties for best with exactly two opponents."
+          },
+          "four_way_tie": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Probability that all four players tie for best."
+          },
+          "loss": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Probability that the user is not among the best hands, including ties involving only opponents."
+          }
+        },
+        "description": "The five mutually exclusive probabilities sum to one. Equity = outright_win + two_way_tie/2 + three_way_tie/3 + four_way_tie/4. For Monte Carlo they are empirical frequencies from the same trials."
+      },
+      "WinProbability": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "percent",
+          "confidence_interval_percent",
+          "confidence_level",
+          "display"
+        ],
+        "properties": {
+          "percent": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "100 * outcome_probabilities.outright_win. Excludes every split pot and never substitutes for equity in grading."
+          },
+          "confidence_interval_percent": {
+            "$ref": "#/components/schemas/PercentInterval"
+          },
+          "confidence_level": {
+            "type": "number",
+            "const": 0.95
+          },
+          "display": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32,
+            "description": "Convenience display rounded to one decimal place, such as 20.0%. Clients may localize it and must use numeric fields for calculation."
+          }
+        },
+        "description": "Marginal 95% interval for the outright-win indicator, using the same Hoeffding radius as equity. For exact analysis the interval is the point value. Individual 95% intervals do not constitute a joint 95% guarantee."
+      },
+      "ActionEVs": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "check",
+          "bet",
+          "fold"
+        ],
+        "properties": {
+          "check": {
+            "$ref": "#/components/schemas/ChipChange"
+          },
+          "bet": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChipChange"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null when bet is not legal. Otherwise equity * (pot_before_action + 40) - 10."
+          },
+          "fold": {
+            "type": "number",
+            "const": 0
+          }
+        },
+        "description": "Expected future net receipts from the current decision onward under check_down. Already committed chips are sunk and are not subtracted again. check = equity * pot_before_action. These are conditional action evaluations, not a forecast of later actual betting."
+      },
+      "FeedbackResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "action",
+          "street",
+          "decision_board",
+          "pot_before_action",
+          "stacks_before_action",
+          "available_actions",
+          "bet_amount",
+          "analysis_policy",
+          "opponent_policy",
+          "simulation_method",
+          "sample_count",
+          "confidence_level",
+          "outcome_probabilities",
+          "outright_win_probability",
+          "equity",
+          "margin_of_error",
+          "equity_confidence_interval",
+          "required_equity",
+          "action_evs",
+          "incremental_bet_ev",
+          "recommendation",
+          "acceptable_actions",
+          "is_correct",
+          "grade",
+          "made_hand",
+          "explanation"
+        ],
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/Action"
+          },
+          "street": {
+            "$ref": "#/components/schemas/Street"
+          },
+          "decision_board": {
+            "$ref": "#/components/schemas/Board"
+          },
+          "pot_before_action": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4000000000,
+            "description": "Pot immediately before the selected action. Later hand.pot may differ."
+          },
+          "stacks_before_action": {
+            "$ref": "#/components/schemas/Stacks"
+          },
+          "available_actions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Action"
+            },
+            "minItems": 2,
+            "maxItems": 3,
+            "uniqueItems": true,
+            "allOf": [
+              {
+                "contains": {
+                  "const": "check"
+                }
+              },
+              {
+                "contains": {
+                  "const": "fold"
+                }
+              }
+            ],
+            "description": "Legal candidates at the saved decision. check and fold are always legal; bet requires all four stacks to cover 10."
+          },
+          "bet_amount": {
+            "type": "integer",
+            "const": 10
+          },
+          "analysis_policy": {
+            "type": "string",
+            "const": "check_down"
+          },
+          "opponent_policy": {
+            "type": "string",
+            "const": "check_or_call"
+          },
+          "simulation_method": {
+            "type": "string",
+            "enum": [
+              "monte_carlo",
+              "exact"
+            ],
+            "description": "monte_carlo uses exactly 10,000 independent trials. exact uses complete enumeration or an exact mathematical proof."
+          },
+          "sample_count": {
+            "type": "integer",
+            "enum": [
+              0,
+              10000
+            ],
+            "description": "10,000 counts independent Monte Carlo trials, including repeated complete outcomes. 0 means an exact result."
+          },
+          "confidence_level": {
+            "type": "number",
+            "const": 0.95
+          },
+          "outcome_probabilities": {
+            "$ref": "#/components/schemas/OutcomeProbabilities"
+          },
+          "outright_win_probability": {
+            "$ref": "#/components/schemas/WinProbability"
+          },
+          "equity": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Expected fraction of the pot received by the user among all four players, including 1/K for a K-way tie involving the user."
+          },
+          "margin_of_error": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Absolute equity radius. For 10,000 independent bounded outcomes X in {0, 1/4, 1/3, 1/2, 1}, m = min(1, sqrt(ln(40)/(2*sample_count))). For exact analysis m=0. Hoeffding gives P(|estimate-true equity| >= m) <= 0.05."
+          },
+          "equity_confidence_interval": {
+            "$ref": "#/components/schemas/FractionInterval"
+          },
+          "required_equity": {
+            "type": "number",
+            "const": 0.25,
+            "description": "Break-even pot share for adding one fully matched four-player bet, relative to checking: 10/40. This is not the heads-up call-odds formula."
+          },
+          "action_evs": {
+            "$ref": "#/components/schemas/ActionEVs"
+          },
+          "incremental_bet_ev": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChipChange"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "action_evs.bet - action_evs.check = 40*equity - 10. Null if bet is not legal."
+          },
+          "recommendation": {
+            "type": "string",
+            "enum": [
+              "check",
+              "bet",
+              "either"
+            ],
+            "description": "Point-estimate preference. If bet is legal: bet for equity>0.25, check for equity<0.25, either at exact equality. If bet is unavailable: check. Prefer check over a point tie with fold."
+          },
+          "acceptable_actions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Action"
+            },
+            "minItems": 1,
+            "maxItems": 3,
+            "uniqueItems": true,
+            "description": "Legal actions that maximize EV for at least one equity e in the closed interval [max(0,equity-m), min(1,equity+m)]. Use the SAME e across every candidate EV. This preserves their correlation and avoids grading from independently overlapping EV intervals."
+          },
+          "is_correct": {
+            "type": "boolean",
+            "description": "Exactly whether acceptable_actions contains action."
+          },
+          "grade": {
+            "type": "string",
+            "enum": [
+              "good",
+              "bad",
+              "reasonable"
+            ],
+            "description": "bad if is_correct=false. Otherwise good when acceptable_actions has one member, and reasonable when it has two or three."
+          },
+          "made_hand": {
+            "$ref": "#/components/schemas/HandCategory",
+            "description": "Name of the user’s best currently made five-card category using only user_cards and decision_board, before any future card is revealed."
+          },
+          "explanation": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000,
+              "description": "A factual explanation using this decision’s equity, uncertainty, and EV numbers."
+            },
+            "minItems": 1,
+            "maxItems": 10
+          }
+        },
+        "description": "Feedback is based only on information visible at the saved decision and the three disclosed ranges. It never uses the actual concealed opponent cards, actual future board, or later outcome. The server freezes the underlying analysis before accepting the action. Replay and retries do not rerun it.",
+        "x-invariants": [
+          "equity = outright_win + two_way_tie/2 + three_way_tie/3 + four_way_tie/4; outcome probabilities sum to 1.",
+          "For Monte Carlo, all five outcome frequencies are multiples of 1/10000 and use the same 10000 trials.",
+          "CI = [max(0,equity-margin_of_error), min(1,equity+margin_of_error)]. For outright probability use the same radius before multiplying endpoints by 100.",
+          "When bet is legal, check is acceptable iff lower<=0.25, and bet is acceptable iff upper>=0.25. When bet is unavailable, check is acceptable. With positive pot, fold is acceptable iff lower=0.",
+          "available_actions contains bet iff all stacks_before_action are >=10; selected action must belong to available_actions.",
+          "action_evs and incremental_bet_ev refer to the saved pot_before_action, never the updated response pot.",
+          "made_hand and the analysis use decision_board; the full board shown after fold or showdown cannot retroactively alter them."
+        ],
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "simulation_method": {
+                  "const": "exact"
+                }
+              },
+              "required": [
+                "simulation_method"
+              ]
+            },
+            "then": {
+              "properties": {
+                "sample_count": {
+                  "const": 0
+                },
+                "margin_of_error": {
+                  "const": 0
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "simulation_method": {
+                  "const": "monte_carlo"
+                }
+              },
+              "required": [
+                "simulation_method"
+              ]
+            },
+            "then": {
+              "properties": {
+                "sample_count": {
+                  "const": 10000
+                },
+                "margin_of_error": {
+                  "exclusiveMinimum": 0
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "is_correct": {
+                  "const": false
+                }
+              },
+              "required": [
+                "is_correct"
+              ]
+            },
+            "then": {
+              "properties": {
+                "grade": {
+                  "const": "bad"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "is_correct": {
+                  "const": true
+                },
+                "acceptable_actions": {
+                  "maxItems": 1
+                }
+              },
+              "required": [
+                "is_correct",
+                "acceptable_actions"
+              ]
+            },
+            "then": {
+              "properties": {
+                "grade": {
+                  "const": "good"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "is_correct": {
+                  "const": true
+                },
+                "acceptable_actions": {
+                  "minItems": 2
+                }
+              },
+              "required": [
+                "is_correct",
+                "acceptable_actions"
+              ]
+            },
+            "then": {
+              "properties": {
+                "grade": {
+                  "const": "reasonable"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "street": {
+                  "const": "flop"
+                }
+              },
+              "required": [
+                "street"
+              ]
+            },
+            "then": {
+              "properties": {
+                "decision_board": {
+                  "minItems": 3,
+                  "maxItems": 3
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "street": {
+                  "const": "turn"
+                }
+              },
+              "required": [
+                "street"
+              ]
+            },
+            "then": {
+              "properties": {
+                "decision_board": {
+                  "minItems": 4,
+                  "maxItems": 4
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "street": {
+                  "const": "river"
+                }
+              },
+              "required": [
+                "street"
+              ]
+            },
+            "then": {
+              "properties": {
+                "decision_board": {
+                  "minItems": 5,
+                  "maxItems": 5
+                }
+              }
+            }
+          }
+        ],
+        "examples": [
+          {
+            "action": "bet",
+            "street": "flop",
+            "decision_board": [
+              "Qs",
+              "Js",
+              "Ts"
+            ],
+            "pot_before_action": 40,
+            "stacks_before_action": [
+              990,
+              990,
+              990,
+              990
+            ],
+            "available_actions": [
+              "check",
+              "bet",
+              "fold"
+            ],
+            "bet_amount": 10,
+            "analysis_policy": "check_down",
+            "opponent_policy": "check_or_call",
+            "simulation_method": "exact",
+            "sample_count": 0,
+            "confidence_level": 0.95,
+            "outcome_probabilities": {
+              "outright_win": 1,
+              "two_way_tie": 0,
+              "three_way_tie": 0,
+              "four_way_tie": 0,
+              "loss": 0
+            },
+            "outright_win_probability": {
+              "percent": 100,
+              "confidence_interval_percent": [
+                100,
+                100
+              ],
+              "confidence_level": 0.95,
+              "display": "100.0%"
+            },
+            "equity": 1,
+            "margin_of_error": 0,
+            "equity_confidence_interval": [
+              1,
+              1
+            ],
+            "required_equity": 0.25,
+            "action_evs": {
+              "check": 40,
+              "bet": 70,
+              "fold": 0
+            },
+            "incremental_bet_ev": 30,
+            "recommendation": "bet",
+            "acceptable_actions": [
+              "bet"
+            ],
+            "is_correct": true,
+            "grade": "good",
+            "made_hand": "royal_flush",
+            "explanation": [
+              "Your royal flush always wins. Betting adds an expected 30 chips over checking, because all three opponents call."
+            ]
+          },
+          {
+            "action": "bet",
+            "street": "river",
+            "decision_board": [
+              "As",
+              "Ks",
+              "Qs",
+              "Js",
+              "Ts"
+            ],
+            "pot_before_action": 120,
+            "stacks_before_action": [
+              970,
+              970,
+              970,
+              970
+            ],
+            "available_actions": [
+              "check",
+              "bet",
+              "fold"
+            ],
+            "bet_amount": 10,
+            "analysis_policy": "check_down",
+            "opponent_policy": "check_or_call",
+            "simulation_method": "exact",
+            "sample_count": 0,
+            "confidence_level": 0.95,
+            "outcome_probabilities": {
+              "outright_win": 0,
+              "two_way_tie": 0,
+              "three_way_tie": 0,
+              "four_way_tie": 1,
+              "loss": 0
+            },
+            "outright_win_probability": {
+              "percent": 0,
+              "confidence_interval_percent": [
+                0,
+                0
+              ],
+              "confidence_level": 0.95,
+              "display": "0.0%"
+            },
+            "equity": 0.25,
+            "margin_of_error": 0,
+            "equity_confidence_interval": [
+              0.25,
+              0.25
+            ],
+            "required_equity": 0.25,
+            "action_evs": {
+              "check": 30,
+              "bet": 30,
+              "fold": 0
+            },
+            "incremental_bet_ev": 0,
+            "recommendation": "either",
+            "acceptable_actions": [
+              "check",
+              "bet"
+            ],
+            "is_correct": true,
+            "grade": "reasonable",
+            "made_hand": "royal_flush",
+            "explanation": [
+              "The board gives every player a royal flush. Your outright-win probability is 0%, but your pot share is exactly 25%. Betting and checking both have EV of 30 chips from this decision onward."
+            ]
+          },
+          {
+            "action": "check",
+            "street": "flop",
+            "decision_board": [
+              "4c",
+              "7h",
+              "Js"
+            ],
+            "pot_before_action": 40,
+            "stacks_before_action": [
+              990,
+              990,
+              990,
+              990
+            ],
+            "available_actions": [
+              "check",
+              "bet",
+              "fold"
+            ],
+            "bet_amount": 10,
+            "analysis_policy": "check_down",
+            "opponent_policy": "check_or_call",
+            "simulation_method": "monte_carlo",
+            "sample_count": 10000,
+            "confidence_level": 0.95,
+            "outcome_probabilities": {
+              "outright_win": 0.2,
+              "two_way_tie": 0.102,
+              "three_way_tie": 0,
+              "four_way_tie": 0,
+              "loss": 0.698
+            },
+            "outright_win_probability": {
+              "percent": 20,
+              "confidence_interval_percent": [
+                18.641898484259382,
+                21.35810151574062
+              ],
+              "confidence_level": 0.95,
+              "display": "20.0%"
+            },
+            "equity": 0.251,
+            "margin_of_error": 0.013581015157406196,
+            "equity_confidence_interval": [
+              0.2374189848425938,
+              0.2645810151574062
+            ],
+            "required_equity": 0.25,
+            "action_evs": {
+              "check": 10.04,
+              "bet": 10.079999999999998,
+              "fold": 0
+            },
+            "incremental_bet_ev": 0.03999999999999915,
+            "recommendation": "bet",
+            "acceptable_actions": [
+              "check",
+              "bet"
+            ],
+            "is_correct": true,
+            "grade": "reasonable",
+            "made_hand": "high_card",
+            "explanation": [
+              "Estimated pot share is 25.1%, with an absolute 95% error radius of about 1.36 percentage points. The interval includes 25%, so both checking and betting are accepted."
+            ]
+          }
+        ]
+      },
+      "ShowdownResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "private_cards",
+          "winners",
+          "winning_hand",
+          "payouts",
+          "chip_changes",
+          "user_chip_change",
+          "pot_awarded"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "actual"
+          },
+          "private_cards": {
+            "$ref": "#/components/schemas/PrivateCards"
+          },
+          "winners": {
+            "$ref": "#/components/schemas/WinnerIndices"
+          },
+          "winning_hand": {
+            "$ref": "#/components/schemas/HandCategory",
+            "description": "Best eligible five-card hand category. All winners tie by the full poker ranking, including kickers."
+          },
+          "payouts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChipAmount"
+            },
+            "minItems": 4,
+            "maxItems": 4
+          },
+          "chip_changes": {
+            "$ref": "#/components/schemas/ChipChanges"
+          },
+          "user_chip_change": {
+            "$ref": "#/components/schemas/ChipChange"
+          },
+          "pot_awarded": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4000000000
+          }
+        },
+        "description": "Settle exactly once. With K winners, each receives pot_awarded/K and all other payouts are zero. No odd-chip rounding: fractional fictional chips preserve equal tie shares. payouts sum to pot_awarded, chip_changes sum to zero, and user_chip_change=chip_changes[0]. Hand.pot becomes zero and stacks include payouts.",
+        "examples": [
+          {
+            "kind": "actual",
+            "private_cards": [
+              [
+                "2c",
+                "3d"
+              ],
+              [
+                "4c",
+                "4d"
+              ],
+              [
+                "5c",
+                "5d"
+              ],
+              [
+                "6c",
+                "6d"
+              ]
+            ],
+            "winners": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "winning_hand": "royal_flush",
+            "payouts": [
+              40,
+              40,
+              40,
+              40
+            ],
+            "chip_changes": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "user_chip_change": 0,
+            "pot_awarded": 160
+          }
+        ]
+      },
+      "FoldReviewResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "private_cards",
+          "winners",
+          "winning_hand",
+          "hypothetical_payouts",
+          "actual_winners",
+          "actual_payouts",
+          "actual_chip_changes",
+          "pot_awarded",
+          "user_chip_change",
+          "user_payout",
+          "explanation"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "hypothetical"
+          },
+          "private_cards": {
+            "$ref": "#/components/schemas/PrivateCards"
+          },
+          "winners": {
+            "$ref": "#/components/schemas/WinnerIndices"
+          },
+          "winning_hand": {
+            "$ref": "#/components/schemas/HandCategory",
+            "description": "Hypothetical best five-card hand category if the user had checked down rather than folded."
+          },
+          "hypothetical_payouts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChipAmount"
+            },
+            "minItems": 4,
+            "maxItems": 4
+          },
+          "actual_winners": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 3
+            },
+            "minItems": 1,
+            "maxItems": 3,
+            "uniqueItems": true,
+            "description": "Ascending winning opponent indices after excluding the folded user."
+          },
+          "actual_payouts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChipAmount"
+            },
+            "minItems": 4,
+            "maxItems": 4
+          },
+          "actual_chip_changes": {
+            "$ref": "#/components/schemas/ChipChanges"
+          },
+          "pot_awarded": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4000000000
+          },
+          "user_chip_change": {
+            "$ref": "#/components/schemas/ChipChange"
+          },
+          "user_payout": {
+            "type": "integer",
+            "const": 0
+          },
+          "explanation": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "description": "Explains the hypothetical comparison separately from the actual chip result. The review does not change the recorded grade."
+          }
+        },
+        "description": "The server reveals its already fixed full board and private cards. winners and hypothetical_payouts describe a four-player check-down counterfactual using the existing pot, with no additional betting. Actual settlement excludes the folded user: actual_payouts[0]=0 and the remaining pot splits equally among actual_winners. Both payout arrays sum to pot_awarded. Actual chip changes sum to zero; user_chip_change=actual_chip_changes[0] equals the negative of chips already committed by the user. Hypothetical payouts never enter balances or statistics.",
+        "examples": [
+          {
+            "kind": "hypothetical",
+            "private_cards": [
+              [
+                "2c",
+                "3d"
+              ],
+              [
+                "4c",
+                "4d"
+              ],
+              [
+                "5c",
+                "5d"
+              ],
+              [
+                "6c",
+                "6d"
+              ]
+            ],
+            "winners": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "winning_hand": "royal_flush",
+            "hypothetical_payouts": [
+              30,
+              30,
+              30,
+              30
+            ],
+            "actual_winners": [
+              1,
+              2,
+              3
+            ],
+            "actual_payouts": [
+              0,
+              40,
+              40,
+              40
+            ],
+            "actual_chip_changes": [
+              -30,
+              10,
+              10,
+              10
+            ],
+            "pot_awarded": 120,
+            "user_chip_change": -30,
+            "user_payout": 0,
+            "explanation": "If you had checked, all four players would have received 30. You folded, so the three opponents receive 40 each. Your actual loss is the 30 chips already committed."
+          }
+        ]
+      },
+      "HandResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "session_id",
+          "created_at",
+          "status",
+          "street",
+          "stage",
+          "user_cards",
+          "community_cards",
+          "pot",
+          "stacks",
+          "available_actions",
+          "bet_amount",
+          "opponent_policy",
+          "opponent_ranges",
+          "feedback",
+          "showdown",
+          "review"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/ID"
+          },
+          "session_id": {
+            "$ref": "#/components/schemas/ID"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "completed",
+              "folded",
+              "abandoned"
+            ]
+          },
+          "street": {
+            "$ref": "#/components/schemas/Street"
+          },
+          "stage": {
+            "type": "string",
+            "enum": [
+              "awaiting_action",
+              "awaiting_continuation",
+              "showdown",
+              "fold_review",
+              "abandoned"
+            ]
+          },
+          "user_cards": {
+            "$ref": "#/components/schemas/HoleCards"
+          },
+          "community_cards": {
+            "$ref": "#/components/schemas/Board"
+          },
+          "pot": {
+            "$ref": "#/components/schemas/Pot"
+          },
+          "stacks": {
+            "$ref": "#/components/schemas/Stacks"
+          },
+          "available_actions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Action"
+            },
+            "minItems": 0,
+            "maxItems": 3,
+            "uniqueItems": true,
+            "description": "Empty outside awaiting_action. At awaiting_action includes check and fold, plus bet only if all four stacks cover 10."
+          },
+          "bet_amount": {
+            "type": "integer",
+            "const": 10
+          },
+          "opponent_policy": {
+            "type": "string",
+            "const": "check_or_call"
+          },
+          "opponent_ranges": {
+            "$ref": "#/components/schemas/OpponentRanges"
+          },
+          "feedback": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FeedbackResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "showdown": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShowdownResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "review": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FoldReviewResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "description": "Server-authoritative state. All visible cards are globally unique. Before a terminal reveal, opponent and future cards remain absent, including from feedback. A new street clears public feedback until its action is submitted, while previous feedback remains in immutable replay. For a folded hand street stays at the fold decision street, but community_cards contains the completed five-card board. All cross-field accounting and card constraints require backend validation.",
+        "x-invariants": [
+          "No card repeats within or across user_cards, community_cards, and any revealed private_cards; revealed private_cards[0] equals user_cards.",
+          "In non-fold stages, flop has 3 board cards, turn 4, river 5. Fold review always shows 5 even when the decision street was flop or turn.",
+          "Feedback street, decision_board, and pot_before_action remain the values at submission. Fold/reveal never changes these saved inputs.",
+          "An active hand has a positive unawarded pot. Terminal hand pot is 0. Payouts/refunds update all stacks atomically.",
+          "Before terminal reveal, the chosen actual private cards, fixed future board, and internal seeds are never present in any public field."
+        ],
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "active"
+                }
+              },
+              "required": [
+                "status"
+              ]
+            },
+            "then": {
+              "properties": {
+                "stage": {
+                  "enum": [
+                    "awaiting_action",
+                    "awaiting_continuation"
+                  ]
+                },
+                "pot": {
+                  "minimum": 1
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "completed"
+                }
+              },
+              "required": [
+                "status"
+              ]
+            },
+            "then": {
+              "properties": {
+                "stage": {
+                  "const": "showdown"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "folded"
+                }
+              },
+              "required": [
+                "status"
+              ]
+            },
+            "then": {
+              "properties": {
+                "stage": {
+                  "const": "fold_review"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "abandoned"
+                }
+              },
+              "required": [
+                "status"
+              ]
+            },
+            "then": {
+              "properties": {
+                "stage": {
+                  "const": "abandoned"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "stage": {
+                  "const": "awaiting_action"
+                }
+              },
+              "required": [
+                "stage"
+              ]
+            },
+            "then": {
+              "properties": {
+                "status": {
+                  "const": "active"
+                },
+                "feedback": {
+                  "type": "null"
+                },
+                "showdown": {
+                  "type": "null"
+                },
+                "review": {
+                  "type": "null"
+                },
+                "available_actions": {
+                  "minItems": 2,
+                  "allOf": [
+                    {
+                      "contains": {
+                        "const": "check"
+                      }
+                    },
+                    {
+                      "contains": {
+                        "const": "fold"
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "stage": {
+                  "const": "awaiting_continuation"
+                }
+              },
+              "required": [
+                "stage"
+              ]
+            },
+            "then": {
+              "properties": {
+                "status": {
+                  "const": "active"
+                },
+                "feedback": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/FeedbackResponse"
+                    },
+                    {
+                      "properties": {
+                        "action": {
+                          "enum": [
+                            "check",
+                            "bet"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                },
+                "showdown": {
+                  "type": "null"
+                },
+                "review": {
+                  "type": "null"
+                },
+                "available_actions": {
+                  "maxItems": 0
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "stage": {
+                  "const": "showdown"
+                }
+              },
+              "required": [
+                "stage"
+              ]
+            },
+            "then": {
+              "properties": {
+                "status": {
+                  "const": "completed"
+                },
+                "street": {
+                  "const": "river"
+                },
+                "pot": {
+                  "const": 0
+                },
+                "showdown": {
+                  "$ref": "#/components/schemas/ShowdownResponse"
+                },
+                "review": {
+                  "type": "null"
+                },
+                "feedback": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/FeedbackResponse"
+                    },
+                    {
+                      "properties": {
+                        "street": {
+                          "const": "river"
+                        },
+                        "action": {
+                          "enum": [
+                            "check",
+                            "bet"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                },
+                "available_actions": {
+                  "maxItems": 0
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "stage": {
+                  "const": "fold_review"
+                }
+              },
+              "required": [
+                "stage"
+              ]
+            },
+            "then": {
+              "properties": {
+                "status": {
+                  "const": "folded"
+                },
+                "pot": {
+                  "const": 0
+                },
+                "community_cards": {
+                  "minItems": 5,
+                  "maxItems": 5
+                },
+                "review": {
+                  "$ref": "#/components/schemas/FoldReviewResponse"
+                },
+                "showdown": {
+                  "type": "null"
+                },
+                "feedback": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/FeedbackResponse"
+                    },
+                    {
+                      "properties": {
+                        "action": {
+                          "const": "fold"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "available_actions": {
+                  "maxItems": 0
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "stage": {
+                  "const": "abandoned"
+                }
+              },
+              "required": [
+                "stage"
+              ]
+            },
+            "then": {
+              "properties": {
+                "status": {
+                  "const": "abandoned"
+                },
+                "pot": {
+                  "const": 0
+                },
+                "showdown": {
+                  "type": "null"
+                },
+                "review": {
+                  "type": "null"
+                },
+                "available_actions": {
+                  "maxItems": 0
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "street": {
+                  "const": "flop"
+                },
+                "stage": {
+                  "not": {
+                    "const": "fold_review"
+                  }
+                }
+              },
+              "required": [
+                "street",
+                "stage"
+              ]
+            },
+            "then": {
+              "properties": {
+                "community_cards": {
+                  "minItems": 3,
+                  "maxItems": 3
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "street": {
+                  "const": "turn"
+                },
+                "stage": {
+                  "not": {
+                    "const": "fold_review"
+                  }
+                }
+              },
+              "required": [
+                "street",
+                "stage"
+              ]
+            },
+            "then": {
+              "properties": {
+                "community_cards": {
+                  "minItems": 4,
+                  "maxItems": 4
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "street": {
+                  "const": "river"
+                },
+                "stage": {
+                  "not": {
+                    "const": "fold_review"
+                  }
+                }
+              },
+              "required": [
+                "street",
+                "stage"
+              ]
+            },
+            "then": {
+              "properties": {
+                "community_cards": {
+                  "minItems": 5,
+                  "maxItems": 5
+                }
+              }
+            }
+          }
+        ],
+        "examples": [
+          {
+            "id": "20000000-0000-4000-8000-000000000001",
+            "session_id": "10000000-0000-4000-8000-000000000001",
+            "created_at": "2026-10-09T10:01:00Z",
+            "status": "active",
+            "street": "flop",
+            "stage": "awaiting_action",
+            "user_cards": [
+              "As",
+              "Ks"
+            ],
+            "community_cards": [
+              "Qs",
+              "Js",
+              "Ts"
+            ],
+            "pot": 40,
+            "stacks": [
+              990,
+              990,
+              990,
+              990
+            ],
+            "available_actions": [
+              "check",
+              "bet",
+              "fold"
+            ],
+            "bet_amount": 10,
+            "opponent_policy": "check_or_call",
+            "opponent_ranges": [
+              {
+                "player_index": 1,
+                "id": "small_pairs",
+                "name": "Small pairs",
+                "description": "This opponent holds one of the listed pairs. All compatible joint assignments have equal probability.",
+                "hands": [
+                  "22",
+                  "33",
+                  "44",
+                  "55"
+                ]
+              },
+              {
+                "player_index": 2,
+                "id": "small_pairs",
+                "name": "Small pairs",
+                "description": "This opponent holds one of the listed pairs. All compatible joint assignments have equal probability.",
+                "hands": [
+                  "22",
+                  "33",
+                  "44",
+                  "55"
+                ]
+              },
+              {
+                "player_index": 3,
+                "id": "small_pairs",
+                "name": "Small pairs",
+                "description": "This opponent holds one of the listed pairs. All compatible joint assignments have equal probability.",
+                "hands": [
+                  "22",
+                  "33",
+                  "44",
+                  "55"
+                ]
+              }
+            ],
+            "feedback": null,
+            "showdown": null,
+            "review": null
+          },
+          {
+            "id": "20000000-0000-4000-8000-000000000001",
+            "session_id": "10000000-0000-4000-8000-000000000001",
+            "created_at": "2026-10-09T10:01:00Z",
+            "status": "active",
+            "street": "flop",
+            "stage": "awaiting_continuation",
+            "user_cards": [
+              "As",
+              "Ks"
+            ],
+            "community_cards": [
+              "Qs",
+              "Js",
+              "Ts"
+            ],
+            "pot": 80,
+            "stacks": [
+              980,
+              980,
+              980,
+              980
+            ],
+            "available_actions": [],
+            "bet_amount": 10,
+            "opponent_policy": "check_or_call",
+            "opponent_ranges": [
+              {
+                "player_index": 1,
+                "id": "small_pairs",
+                "name": "Small pairs",
+                "description": "This opponent holds one of the listed pairs. All compatible joint assignments have equal probability.",
+                "hands": [
+                  "22",
+                  "33",
+                  "44",
+                  "55"
+                ]
+              },
+              {
+                "player_index": 2,
+                "id": "small_pairs",
+                "name": "Small pairs",
+                "description": "This opponent holds one of the listed pairs. All compatible joint assignments have equal probability.",
+                "hands": [
+                  "22",
+                  "33",
+                  "44",
+                  "55"
+                ]
+              },
+              {
+                "player_index": 3,
+                "id": "small_pairs",
+                "name": "Small pairs",
+                "description": "This opponent holds one of the listed pairs. All compatible joint assignments have equal probability.",
+                "hands": [
+                  "22",
+                  "33",
+                  "44",
+                  "55"
+                ]
+              }
+            ],
+            "feedback": {
+              "action": "bet",
+              "street": "flop",
+              "decision_board": [
+                "Qs",
+                "Js",
+                "Ts"
+              ],
+              "pot_before_action": 40,
+              "stacks_before_action": [
+                990,
+                990,
+                990,
+                990
+              ],
+              "available_actions": [
+                "check",
+                "bet",
+                "fold"
+              ],
+              "bet_amount": 10,
+              "analysis_policy": "check_down",
+              "opponent_policy": "check_or_call",
+              "simulation_method": "exact",
+              "sample_count": 0,
+              "confidence_level": 0.95,
+              "outcome_probabilities": {
+                "outright_win": 1,
+                "two_way_tie": 0,
+                "three_way_tie": 0,
+                "four_way_tie": 0,
+                "loss": 0
+              },
+              "outright_win_probability": {
+                "percent": 100,
+                "confidence_interval_percent": [
+                  100,
+                  100
+                ],
+                "confidence_level": 0.95,
+                "display": "100.0%"
+              },
+              "equity": 1,
+              "margin_of_error": 0,
+              "equity_confidence_interval": [
+                1,
+                1
+              ],
+              "required_equity": 0.25,
+              "action_evs": {
+                "check": 40,
+                "bet": 70,
+                "fold": 0
+              },
+              "incremental_bet_ev": 30,
+              "recommendation": "bet",
+              "acceptable_actions": [
+                "bet"
+              ],
+              "is_correct": true,
+              "grade": "good",
+              "made_hand": "royal_flush",
+              "explanation": [
+                "Your royal flush always wins. Betting adds an expected 30 chips over checking, because all three opponents call."
+              ]
+            },
+            "showdown": null,
+            "review": null
+          },
+          {
+            "id": "20000000-0000-4000-8000-000000000001",
+            "session_id": "10000000-0000-4000-8000-000000000001",
+            "created_at": "2026-10-09T10:01:00Z",
+            "status": "active",
+            "street": "turn",
+            "stage": "awaiting_action",
+            "user_cards": [
+              "As",
+              "Ks"
+            ],
+            "community_cards": [
+              "Qs",
+              "Js",
+              "Ts",
+              "2c"
+            ],
+            "pot": 80,
+            "stacks": [
+              980,
+              980,
+              980,
+              980
+            ],
+            "available_actions": [
+              "check",
+              "bet",
+              "fold"
+            ],
+            "bet_amount": 10,
+            "opponent_policy": "check_or_call",
+            "opponent_ranges": [
+              {
+                "player_index": 1,
+                "id": "small_pairs",
+                "name": "Small pairs",
+                "description": "This opponent holds one of the listed pairs. All compatible joint assignments have equal probability.",
+                "hands": [
+                  "22",
+                  "33",
+                  "44",
+                  "55"
+                ]
+              },
+              {
+                "player_index": 2,
+                "id": "small_pairs",
+                "name": "Small pairs",
+                "description": "This opponent holds one of the listed pairs. All compatible joint assignments have equal probability.",
+                "hands": [
+                  "22",
+                  "33",
+                  "44",
+                  "55"
+                ]
+              },
+              {
+                "player_index": 3,
+                "id": "small_pairs",
+                "name": "Small pairs",
+                "description": "This opponent holds one of the listed pairs. All compatible joint assignments have equal probability.",
+                "hands": [
+                  "22",
+                  "33",
+                  "44",
+                  "55"
+                ]
+              }
+            ],
+            "feedback": null,
+            "showdown": null,
+            "review": null
+          },
+          {
+            "id": "20000000-0000-4000-8000-000000000002",
+            "session_id": "10000000-0000-4000-8000-000000000001",
+            "created_at": "2026-10-09T10:01:00Z",
+            "status": "completed",
+            "street": "river",
+            "stage": "showdown",
+            "user_cards": [
+              "2c",
+              "3d"
+            ],
+            "community_cards": [
+              "As",
+              "Ks",
+              "Qs",
+              "Js",
+              "Ts"
+            ],
+            "pot": 0,
+            "stacks": [
+              1000,
+              1000,
+              1000,
+              1000
+            ],
+            "available_actions": [],
+            "bet_amount": 10,
+            "opponent_policy": "check_or_call",
+            "opponent_ranges": [
+              {
+                "player_index": 1,
+                "id": "small_pairs",
+                "name": "Small pairs",
+                "description": "This opponent holds one of the listed pairs. All compatible joint assignments have equal probability.",
+                "hands": [
+                  "44",
+                  "55",
+                  "66",
+                  "77"
+                ]
+              },
+              {
+                "player_index": 2,
+                "id": "small_pairs",
+                "name": "Small pairs",
+                "description": "This opponent holds one of the listed pairs. All compatible joint assignments have equal probability.",
+                "hands": [
+                  "44",
+                  "55",
+                  "66",
+                  "77"
+                ]
+              },
+              {
+                "player_index": 3,
+                "id": "small_pairs",
+                "name": "Small pairs",
+                "description": "This opponent holds one of the listed pairs. All compatible joint assignments have equal probability.",
+                "hands": [
+                  "44",
+                  "55",
+                  "66",
+                  "77"
+                ]
+              }
+            ],
+            "feedback": {
+              "action": "bet",
+              "street": "river",
+              "decision_board": [
+                "As",
+                "Ks",
+                "Qs",
+                "Js",
+                "Ts"
+              ],
+              "pot_before_action": 120,
+              "stacks_before_action": [
+                970,
+                970,
+                970,
+                970
+              ],
+              "available_actions": [
+                "check",
+                "bet",
+                "fold"
+              ],
+              "bet_amount": 10,
+              "analysis_policy": "check_down",
+              "opponent_policy": "check_or_call",
+              "simulation_method": "exact",
+              "sample_count": 0,
+              "confidence_level": 0.95,
+              "outcome_probabilities": {
+                "outright_win": 0,
+                "two_way_tie": 0,
+                "three_way_tie": 0,
+                "four_way_tie": 1,
+                "loss": 0
+              },
+              "outright_win_probability": {
+                "percent": 0,
+                "confidence_interval_percent": [
+                  0,
+                  0
+                ],
+                "confidence_level": 0.95,
+                "display": "0.0%"
+              },
+              "equity": 0.25,
+              "margin_of_error": 0,
+              "equity_confidence_interval": [
+                0.25,
+                0.25
+              ],
+              "required_equity": 0.25,
+              "action_evs": {
+                "check": 30,
+                "bet": 30,
+                "fold": 0
+              },
+              "incremental_bet_ev": 0,
+              "recommendation": "either",
+              "acceptable_actions": [
+                "check",
+                "bet"
+              ],
+              "is_correct": true,
+              "grade": "reasonable",
+              "made_hand": "royal_flush",
+              "explanation": [
+                "The board gives every player a royal flush. Your outright-win probability is 0%, but your pot share is exactly 25%. Betting and checking both have EV of 30 chips from this decision onward."
+              ]
+            },
+            "showdown": {
+              "kind": "actual",
+              "private_cards": [
+                [
+                  "2c",
+                  "3d"
+                ],
+                [
+                  "4c",
+                  "4d"
+                ],
+                [
+                  "5c",
+                  "5d"
+                ],
+                [
+                  "6c",
+                  "6d"
+                ]
+              ],
+              "winners": [
+                0,
+                1,
+                2,
+                3
+              ],
+              "winning_hand": "royal_flush",
+              "payouts": [
+                40,
+                40,
+                40,
+                40
+              ],
+              "chip_changes": [
+                0,
+                0,
+                0,
+                0
+              ],
+              "user_chip_change": 0,
+              "pot_awarded": 160
+            },
+            "review": null
+          },
+          {
+            "id": "20000000-0000-4000-8000-000000000002",
+            "session_id": "10000000-0000-4000-8000-000000000001",
+            "created_at": "2026-10-09T10:01:00Z",
+            "status": "folded",
+            "street": "river",
+            "stage": "fold_review",
+            "user_cards": [
+              "2c",
+              "3d"
+            ],
+            "community_cards": [
+              "As",
+              "Ks",
+              "Qs",
+              "Js",
+              "Ts"
+            ],
+            "pot": 0,
+            "stacks": [
+              970,
+              1010,
+              1010,
+              1010
+            ],
+            "available_actions": [],
+            "bet_amount": 10,
+            "opponent_policy": "check_or_call",
+            "opponent_ranges": [
+              {
+                "player_index": 1,
+                "id": "small_pairs",
+                "name": "Small pairs",
+                "description": "This opponent holds one of the listed pairs. All compatible joint assignments have equal probability.",
+                "hands": [
+                  "44",
+                  "55",
+                  "66",
+                  "77"
+                ]
+              },
+              {
+                "player_index": 2,
+                "id": "small_pairs",
+                "name": "Small pairs",
+                "description": "This opponent holds one of the listed pairs. All compatible joint assignments have equal probability.",
+                "hands": [
+                  "44",
+                  "55",
+                  "66",
+                  "77"
+                ]
+              },
+              {
+                "player_index": 3,
+                "id": "small_pairs",
+                "name": "Small pairs",
+                "description": "This opponent holds one of the listed pairs. All compatible joint assignments have equal probability.",
+                "hands": [
+                  "44",
+                  "55",
+                  "66",
+                  "77"
+                ]
+              }
+            ],
+            "feedback": {
+              "action": "fold",
+              "street": "river",
+              "decision_board": [
+                "As",
+                "Ks",
+                "Qs",
+                "Js",
+                "Ts"
+              ],
+              "pot_before_action": 120,
+              "stacks_before_action": [
+                970,
+                970,
+                970,
+                970
+              ],
+              "available_actions": [
+                "check",
+                "bet",
+                "fold"
+              ],
+              "bet_amount": 10,
+              "analysis_policy": "check_down",
+              "opponent_policy": "check_or_call",
+              "simulation_method": "exact",
+              "sample_count": 0,
+              "confidence_level": 0.95,
+              "outcome_probabilities": {
+                "outright_win": 0,
+                "two_way_tie": 0,
+                "three_way_tie": 0,
+                "four_way_tie": 1,
+                "loss": 0
+              },
+              "outright_win_probability": {
+                "percent": 0,
+                "confidence_interval_percent": [
+                  0,
+                  0
+                ],
+                "confidence_level": 0.95,
+                "display": "0.0%"
+              },
+              "equity": 0.25,
+              "margin_of_error": 0,
+              "equity_confidence_interval": [
+                0.25,
+                0.25
+              ],
+              "required_equity": 0.25,
+              "action_evs": {
+                "check": 30,
+                "bet": 30,
+                "fold": 0
+              },
+              "incremental_bet_ev": 0,
+              "recommendation": "either",
+              "acceptable_actions": [
+                "check",
+                "bet"
+              ],
+              "is_correct": false,
+              "grade": "bad",
+              "made_hand": "royal_flush",
+              "explanation": [
+                "Checking guarantees an equal share of this pot. Folding forfeits that share and has EV 0 from this decision onward. The later hypothetical review does not change this grade."
+              ]
+            },
+            "showdown": null,
+            "review": {
+              "kind": "hypothetical",
+              "private_cards": [
+                [
+                  "2c",
+                  "3d"
+                ],
+                [
+                  "4c",
+                  "4d"
+                ],
+                [
+                  "5c",
+                  "5d"
+                ],
+                [
+                  "6c",
+                  "6d"
+                ]
+              ],
+              "winners": [
+                0,
+                1,
+                2,
+                3
+              ],
+              "winning_hand": "royal_flush",
+              "hypothetical_payouts": [
+                30,
+                30,
+                30,
+                30
+              ],
+              "actual_winners": [
+                1,
+                2,
+                3
+              ],
+              "actual_payouts": [
+                0,
+                40,
+                40,
+                40
+              ],
+              "actual_chip_changes": [
+                -30,
+                10,
+                10,
+                10
+              ],
+              "pot_awarded": 120,
+              "user_chip_change": -30,
+              "user_payout": 0,
+              "explanation": "If you had checked, all four players would have received 30. You folded, so the three opponents receive 40 each. Your actual loss is the 30 chips already committed."
+            }
+          }
+        ]
+      },
+      "ReplayResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "read_only",
+          "hand_status",
+          "step",
+          "total_steps",
+          "event",
+          "state"
+        ],
+        "properties": {
+          "read_only": {
+            "type": "boolean",
+            "const": true
+          },
+          "hand_status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "completed",
+              "folded",
+              "abandoned"
+            ],
+            "description": "Current overall hand status; state below remains its original recorded snapshot."
+          },
+          "step": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "total_steps": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "event": {
+            "type": "string",
+            "enum": [
+              "deal",
+              "action",
+              "continue",
+              "abandon"
+            ]
+          },
+          "state": {
+            "$ref": "#/components/schemas/HandResponse"
+          }
+        },
+        "description": "One immutable, zero-based recorded state. step < total_steps. No simulation, chip mutation, or grading occurs. Later outcomes never backfill hidden cards or feedback into earlier stages."
+      },
+      "GradeCounts": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "good",
+          "bad",
+          "reasonable"
+        ],
+        "properties": {
+          "good": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "bad": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "reasonable": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "description": "Counts each accepted action once at its decision street, including actions in later-abandoned hands. Retries and replay do not increment these counts."
+      },
+      "HandCounts": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "completed",
+          "folded",
+          "abandoned"
+        ],
+        "properties": {
+          "completed": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "folded": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "abandoned": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "description": "Terminal hand counts. Active hands do not enter these counts."
+      },
+      "SessionStatistics": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "hands",
+          "decisions",
+          "net_chips"
+        ],
+        "properties": {
+          "hands": {
+            "$ref": "#/components/schemas/HandCounts"
+          },
+          "decisions": {
+            "$ref": "#/components/schemas/GradeCounts"
+          },
+          "net_chips": {
+            "$ref": "#/components/schemas/ChipChange"
+          }
+        },
+        "description": "net_chips sums user_chip_change from actual completed and folded hand settlements. Hypothetical reviews are excluded. Abandoned hands refund their contributions and contribute zero to net_chips."
+      },
+      "SessionResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "status",
+          "created_at",
+          "rules",
+          "hand_ids",
+          "active_hand_id",
+          "statistics"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/ID"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "ended"
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "rules": {
+            "$ref": "#/components/schemas/GameRules"
+          },
+          "hand_ids": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ID"
+            },
+            "minItems": 0,
+            "uniqueItems": true,
+            "description": "Hand IDs in creation order, including terminal hands."
+          },
+          "active_hand_id": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ID"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The sole active hand’s ID or null. When non-null it must occur in hand_ids."
+          },
+          "statistics": {
+            "$ref": "#/components/schemas/SessionStatistics"
+          }
+        },
+        "description": "At most one session is active in this local single-user installation, with at most one active hand in it. The server persists sessions, hands, cached analysis, and replay across restarts until explicit deletion; there is no automatic expiry.",
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "ended"
+                }
+              },
+              "required": [
+                "status"
+              ]
+            },
+            "then": {
+              "properties": {
+                "active_hand_id": {
+                  "type": "null"
+                }
+              }
+            }
+          }
+        ],
+        "examples": [
+          {
+            "id": "10000000-0000-4000-8000-000000000001",
+            "status": "active",
+            "created_at": "2026-10-09T10:00:00Z",
+            "rules": {
+              "player_count": 4,
+              "starting_stack": 1000,
+              "opening_contribution": 10,
+              "bet_amount": 10,
+              "opponent_policy": "check_or_call",
+              "analysis_policy": "check_down"
+            },
+            "hand_ids": [],
+            "active_hand_id": null,
+            "statistics": {
+              "hands": {
+                "completed": 0,
+                "folded": 0,
+                "abandoned": 0
+              },
+              "decisions": {
+                "good": 0,
+                "bad": 0,
+                "reasonable": 0
+              },
+              "net_chips": 0
+            }
+          }
+        ]
+      },
+      "ValidationIssue": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "location",
+          "message"
+        ],
+        "properties": {
+          "location": {
+            "type": "array",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 32
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000,
+            "description": "Readable description of the validation failure."
+          }
+        },
+        "description": "Optional structured validation detail, without echoing private cards, seeds, or internal stack traces."
+      },
+      "APIError": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "invalid_request",
+              "validation_error",
+              "unsupported_media_type",
+              "session_not_found",
+              "hand_not_found",
+              "active_session_exists",
+              "active_hand_exists",
+              "session_ended",
+              "session_active",
+              "hand_not_active",
+              "stale_street",
+              "invalid_stage",
+              "replay_step_out_of_range",
+              "insufficient_chips",
+              "simulation_unavailable",
+              "creation_request_replayed"
+            ],
+            "description": "Stable machine-readable domain error code."
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000,
+            "description": "Human-readable English message without private/internal data."
+          },
+          "details": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ValidationIssue"
+            },
+            "minItems": 1,
+            "maxItems": 100
+          }
+        },
+        "description": "Shared error envelope for every endpoint. Clients branch on code, not message."
+      }
+    }
+  },
+  "x-source-contracts": {
+    "analytical_source": "openapi.json, Modern Poker decision trainer 1.0.0",
+    "workflow_source": "openapi-backend.json, Poker Tutor API 0.1.0",
+    "compatibility": "Retains 10 workflow operations and JSON request fields. Adds required Idempotency-Key UUID headers on session/hand creation, analytical/domain fields, rules, category enums, APIError, and abandoned stage. Requires backend/client adaptation."
+  },
+  "x-upgrade-policy": "At the 0.1.0 to 1.0.0 schema upgrade, silently discard legacy application data without archive or confirmation and initialize a versioned 1.0.0 database. Never reset an existing 1.0.0 database on ordinary restart.",
+  "x-server-configuration": {
+    "starting_stack": "POKER_TUTOR_STARTING_STACK integer, default 1000; validate GameRules bounds and affordability.",
+    "opening_contribution": "POKER_TUTOR_OPENING_CONTRIBUTION integer, default 10; validate GameRules bounds.",
+    "opponent_ranges": "POKER_TUTOR_RANGES_FILE optionally selects a UTF-8 JSON OpponentRanges array ordered seats 1-3; without it use all 169 classes. Invalid configuration fails startup. Freeze session rules and per-hand ranges; no client overrides."
+  },
+  "x-hand-state-transitions": [
+    "create hand -> active/awaiting_action/flop, with hidden fixed opponents and runout and a cached unpublished flop analysis.",
+    "check or bet -> active/awaiting_continuation at same street, with saved public feedback; no new card.",
+    "continue after flop -> active/awaiting_action/turn; reveal exactly the fixed turn and cache its unpublished analysis.",
+    "continue after turn -> active/awaiting_action/river; reveal exactly the fixed river and cache its unpublished analysis.",
+    "continue after river -> completed/showdown; settle once, pot=0, clear active_hand_id.",
+    "fold -> folded/fold_review at the decision street; reveal the fixed full board and private cards, settle actual pot among opponents, clear active_hand_id.",
+    "end session -> unfinished hand becomes abandoned/abandoned; refund contributions, pot=0, do not reveal concealed cards; session ends and active_hand_id=null."
+  ]
+}

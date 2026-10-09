@@ -1,0 +1,169 @@
+{
+  "plugins": [
+    {
+      "name": "product-sdd-pocock-light",
+      "version": "0.1.0",
+      "source": "./plugins/product-sdd-pocock-light",
+      "source_ref": "light-pocock-sdd",
+      "scope": "local",
+      "targets": [
+        "opencode"
+      ],
+      "installed_at": "2026-10-05T12:09:31Z",
+      "components": {
+        "skills": [
+          {
+            "name": "code-review",
+            "source": "plugins/product-sdd-pocock-light/skills/code-review",
+            "targets": [
+              "opencode"
+            ],
+            "destinations": [
+              "/Users/mikolaj.kmita/Developer/AI/workshops/GDD/.agents/skills/code-review"
+            ]
+          },
+          {
+            "name": "codebase-design",
+            "source": "plugins/product-sdd-pocock-light/skills/codebase-design",
+            "targets": [
+              "opencode"
+            ],
+            "destinations": [
+              "/Users/mikolaj.kmita/Developer/AI/workshops/GDD/.agents/skills/codebase-design"
+            ]
+          },
+          {
+            "name": "domain-modeling",
+            "source": "plugins/product-sdd-pocock-light/skills/domain-modeling",
+            "targets": [
+              "opencode"
+            ],
+            "destinations": [
+              "/Users/mikolaj.kmita/Developer/AI/workshops/GDD/.agents/skills/domain-modeling"
+            ]
+          },
+          {
+            "name": "grilling",
+            "source": "plugins/product-sdd-pocock-light/skills/grilling",
+            "targets": [
+              "opencode"
+            ],
+            "destinations": [
+              "/Users/mikolaj.kmita/Developer/AI/workshops/GDD/.agents/skills/grilling"
+            ]
+          },
+          {
+            "name": "handoff",
+            "source": "plugins/product-sdd-pocock-light/skills/handoff",
+            "targets": [
+              "opencode"
+            ],
+            "destinations": [
+              "/Users/mikolaj.kmita/Developer/AI/workshops/GDD/.agents/skills/handoff"
+            ]
+          },
+          {
+            "name": "humanizer",
+            "source": "plugins/product-sdd-pocock-light/skills/humanizer",
+            "targets": [
+              "opencode"
+            ],
+            "destinations": [
+              "/Users/mikolaj.kmita/Developer/AI/workshops/GDD/.agents/skills/humanizer"
+            ]
+          },
+          {
+            "name": "ponytail",
+            "source": "plugins/product-sdd-pocock-light/skills/ponytail",
+            "targets": [
+              "opencode"
+            ],
+            "destinations": [
+              "/Users/mikolaj.kmita/Developer/AI/workshops/GDD/.agents/skills/ponytail"
+            ]
+          },
+          {
+            "name": "prototype",
+            "source": "plugins/product-sdd-pocock-light/skills/prototype",
+            "targets": [
+              "opencode"
+            ],
+            "destinations": [
+              "/Users/mikolaj.kmita/Developer/AI/workshops/GDD/.agents/skills/prototype"
+            ]
+          },
+          {
+            "name": "research",
+            "source": "plugins/product-sdd-pocock-light/skills/research",
+            "targets": [
+              "opencode"
+            ],
+            "destinations": [
+              "/Users/mikolaj.kmita/Developer/AI/workshops/GDD/.agents/skills/research"
+            ]
+          },
+          {
+            "name": "setup-sdd",
+            "source": "plugins/product-sdd-pocock-light/skills/setup-sdd",
+            "targets": [
+              "opencode"
+            ],
+            "destinations": [
+              "/Users/mikolaj.kmita/Developer/AI/workshops/GDD/.agents/skills/setup-sdd"
+            ]
+          },
+          {
+            "name": "tdd",
+            "source": "plugins/product-sdd-pocock-light/skills/tdd",
+            "targets": [
+              "opencode"
+            ],
+            "destinations": [
+              "/Users/mikolaj.kmita/Developer/AI/workshops/GDD/.agents/skills/tdd"
+            ]
+          },
+          {
+            "name": "to-questionnaire",
+            "source": "plugins/product-sdd-pocock-light/skills/to-questionnaire",
+            "targets": [
+              "opencode"
+            ],
+            "destinations": [
+              "/Users/mikolaj.kmita/Developer/AI/workshops/GDD/.agents/skills/to-questionnaire"
+            ]
+          },
+          {
+            "name": "to-spec",
+            "source": "plugins/product-sdd-pocock-light/skills/to-spec",
+            "targets": [
+              "opencode"
+            ],
+            "destinations": [
+              "/Users/mikolaj.kmita/Developer/AI/workshops/GDD/.agents/skills/to-spec"
+            ]
+          },
+          {
+            "name": "to-tickets",
+            "source": "plugins/product-sdd-pocock-light/skills/to-tickets",
+            "targets": [
+              "opencode"
+            ],
+            "destinations": [
+              "/Users/mikolaj.kmita/Developer/AI/workshops/GDD/.agents/skills/to-tickets"
+            ]
+          },
+          {
+            "name": "wayfinder",
+            "source": "plugins/product-sdd-pocock-light/skills/wayfinder",
+            "targets": [
+              "opencode"
+            ],
+            "destinations": [
+              "/Users/mikolaj.kmita/Developer/AI/workshops/GDD/.agents/skills/wayfinder"
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
